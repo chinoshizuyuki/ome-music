@@ -5154,7 +5154,8 @@ fn mask_netease_cookie(cookie: &str) -> String {
 }
 
 async fn fetch_netease_vip_status(config: &ResolvedNeteaseSourceConfig) -> Result<NeteaseVipStatusDto, String> {
-    if config.token.is_none() {
+    let has_token = config.token.is_some();
+    if !has_token {
         return Ok(NeteaseVipStatusDto {
             is_member: false,
             level: None,
