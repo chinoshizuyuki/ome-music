@@ -1840,7 +1840,7 @@ async fn resolve_track_lyrics(
     };
 
     save_cached_lyrics(&state, &resolved)?;
-    Ok(with_saved_lyric_offset(&state, resolved)?)
+    with_saved_lyric_offset(&state, resolved)
 }
 
 #[tauri::command]
@@ -4218,7 +4218,7 @@ fn clean_bilibili_title(title: &str) -> String {
 }
 
 fn infer_bilibili_artist_album(title: &str, uploader: &str) -> (String, String) {
-    let normalized = title.replace('《', " - ").replace('》', " - ");
+    let normalized = title.replace(['《', '》'], " - ");
     let separators = [" - ", "-", "—", "|", "｜"];
     for separator in separators {
         if let Some((left, right)) = normalized.split_once(separator) {
@@ -6317,7 +6317,7 @@ fn load_mood_entries(db: &Connection, limit: u32) -> Result<Vec<MoodEntryDto>, S
     load_mood_entries_by_where(
         db,
         "ORDER BY entry_date DESC LIMIT ?1",
-        params![limit.max(1).min(120) as i64],
+        params![limit.clamp(1, 120) as i64],
         limit,
     )
 }
@@ -6967,7 +6967,7 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
         })
         .setup(|app| {
             let db = initialize_database(app)
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+                .map_err(std::io::Error::other)?;
             app.manage(AppState {
                 db: Mutex::new(db),
                 media_proxy: Mutex::new(HashMap::new()),

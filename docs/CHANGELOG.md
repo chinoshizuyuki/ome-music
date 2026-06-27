@@ -25,6 +25,11 @@
 - **预存 ESLint error 清理**（使新流水线可正常通过）：
   - 删除 `src/App.tsx` 中从未被调用的 `isRestoredOnlyTrack` 函数与配套 `restoredOnlyPrefixPattern` 正则（dead code）。
   - 移除 `src/features/speech/provider.ts` 中只赋值不读取的 `stopResolve` 状态变量，Promise 仍通过闭包内的 `resolve` / `reject` 正常完成。
+- **预存 Rust clippy 警告清理**（使 `cargo clippy -D warnings` 通过）：
+  - `lib.rs:1843` needless_question_mark：`Ok(with_saved_lyric_offset(&state, resolved)?)` → 去掉 `Ok(...?)` 包裹。
+  - `lib.rs:4221` collapsible_str_replace：`title.replace('《', " - ").replace('》', " - ")` → `title.replace(['《', '》'], " - ")`。
+  - `lib.rs:6320` manual_clamp：`limit.max(1).min(120)` → `limit.clamp(1, 120)`。
+  - `lib.rs:6970` io_other_error：`std::io::Error::new(std::io::ErrorKind::Other, error)` → `std::io::Error::other(error)`。
 - **统一代码风格**：对全仓 `src/**` 与配置文件运行 `prettier --write`，36 个文件统一为 2 空格缩进、双引号、行宽 100、LF 结尾的风格。
 
 ### 变更
