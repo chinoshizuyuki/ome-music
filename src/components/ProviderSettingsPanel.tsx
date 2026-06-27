@@ -356,7 +356,6 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
 
   useEffect(() => {
     if (!open || activeSection !== "storage") return;
-    setStorageOpen(true);
     void getStorageReport()
       .then(setStorageReport)
       .catch((error) => setStorageMessage(`无法读取存储状态 / Could not read storage. ${readError(error)}`));
@@ -406,12 +405,22 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
         baseUrl: neteaseBaseUrl,
         token: neteaseToken.trim() || undefined
       });
+      const savedBilibiliConfig = await saveBilibiliSourceConfig({
+        enabled: bilibiliEnabled,
+        baseUrl: bilibiliBaseUrl,
+        token: undefined,
+        searchScope: bilibiliSearchScope
+      });
       setConfig(savedConfig);
       setSpeechConfig(savedSpeechConfig);
       setMusicSourceConfig(savedMusicSourceConfig);
       setNeteaseEnabled(savedMusicSourceConfig.enabled);
       setNeteaseBaseUrl(savedMusicSourceConfig.baseUrl);
       setNeteaseToken("");
+      setBilibiliConfig(savedBilibiliConfig);
+      setBilibiliEnabled(savedBilibiliConfig.enabled);
+      setBilibiliBaseUrl(savedBilibiliConfig.baseUrl);
+      setBilibiliSearchScope(savedBilibiliConfig.searchScope);
       setProviderName(savedConfig.providerName);
       setBaseUrl(savedConfig.baseUrl);
       setModel(savedConfig.model);
@@ -1011,6 +1020,7 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
 
             {activeSection === "curator" && (
               <>
+                <SettingsIntro title="鉴赏家与声音" subtitle="Curator & Voice" />
                 <SectionLabel icon={KeyRound} title="Music Understanding" subtitle="音乐理解" />
                 <Field label="Provider Name / 供应商">
                   <input
@@ -1267,7 +1277,7 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
                 <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.07] text-white/64"><Library className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-white/84">本地音乐 / Local Library</p><p className="mt-1 text-xs text-white/36">通过主界面搜索框导入，不复制原始文件。</p></div></div>
                 <span className="quick-settings-pill">Ready</span>
               </div>
-            <div className="space-y-4 rounded-[24px] border border-white/[0.06] bg-white/[0.035] p-4">
+            <div className="settings-surface space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3">
@@ -1617,7 +1627,7 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
 
             {activeSection === "storage" && <div className="space-y-4">
               <SettingsIntro title="存储管理" subtitle="See what Ome keeps, and clear only what is safe." />
-            <div className="rounded-[24px] border border-white/[0.06] bg-white/[0.035]">
+            <div className="settings-surface">
               <button
                 type="button"
                 onClick={() => {
@@ -1631,7 +1641,7 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
                     <HardDrive className="h-4 w-4" />
                   </span>
                   <div>
-                    <h3 className="text-sm font-semibold text-white/84">高级 / Advanced · 存储管理 / Storage</h3>
+                    <h3 className="text-sm font-semibold text-white/84">存储管理 / Storage</h3>
                     <p className="mt-1 text-xs text-white/36">
                       {storageReport ? `缓存 ${storageReport.totalCacheDisplaySize} · 数据库 ${storageReport.database.displaySize}` : "查看缓存大小，不删除音乐文件。"}
                     </p>
@@ -1645,7 +1655,7 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
                   {storageReport ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <StorageRow icon={HardDrive} label="应用缓存 / App Cache" value={storageReport.appCache.displaySize} />
-                      <StorageRow icon={HardDrive} label="WebView 缓存 / WebView Cache" value={storageReport.webviewCache.displaySize} />
+                      <StorageRow icon={HardDrive} label="WebView 缓存 / WebView Cache" value={`${storageReport.webviewCache.displaySize} (自动管理)`} />
                       <StorageRow icon={Music2} label="封面缓存 / Cover Cache" value={storageReport.coverCache.displaySize} />
                       <StorageRow icon={ListMusic} label="歌词缓存 / Lyrics Cache" value={storageReport.lyricsCache.displaySize} />
                       <StorageRow icon={FileDown} label="日志 / Logs" value={storageReport.logs.displaySize} />

@@ -917,6 +917,9 @@ export default function App() {
         if (neteaseSelectionRef.current === requestId) setLibraryError("This track is unavailable from the current source.");
         return null;
       }
+      if (playable.url) {
+        preparedPlayableRef.current.set(imported.id, { audioUrl: playable.url });
+      }
       return imported;
     } catch (error) {
       if (neteaseSelectionRef.current !== requestId) return null;
@@ -998,11 +1001,16 @@ export default function App() {
       <div className="fixed inset-0 bg-[#d0c6ba]" />
       {currentTrack && (
         <>
-          <img
-            src={currentTrack.coverUrl}
-            alt=""
-            className="fixed inset-0 h-full w-full scale-[1.28] object-cover opacity-45 blur-[118px] saturate-[1.25] sepia-[0.18]"
-          />
+          {currentTrack.coverUrl ? (
+            <img
+              src={currentTrack.coverUrl}
+              alt=""
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+              className="fixed inset-0 h-full w-full scale-[1.28] object-cover opacity-45 blur-[118px] saturate-[1.25] sepia-[0.18]"
+            />
+          ) : null}
           <div className="fixed inset-0 bg-[radial-gradient(circle_at_62%_45%,rgba(198,96,67,0.34),transparent_34%),radial-gradient(circle_at_28%_61%,rgba(82,86,83,0.42),transparent_38%),linear-gradient(105deg,rgba(190,193,186,0.86)_0%,rgba(207,190,176,0.74)_48%,rgba(225,168,148,0.58)_100%)]" />
         </>
       )}

@@ -267,6 +267,6 @@ function sourceLabel(source?: string): string {
 function danmakuLabel(settings: DanmakuSettings): string {
   if (!settings.enabled) return "关闭 / Off";
   const mode = settings.displayMode === "video" ? "视频氛围" : settings.displayMode === "ambient" ? "全局氛围" : "关闭";
-  const intensity = settings.emotionalIntensity === "quiet" ? "安静" : settings.emotionalIntensity === "expressive" ? "表达" : "平衡";
+  const intensity = settings.emotionalIntensity === "quiet" ? "安静" : settings.emotionalIntensity === "expressive" ? "鲜明" : "平衡";
   return `${mode} · ${intensity} · ${Math.round(settings.opacity * 100)}%`;
 }
