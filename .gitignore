@@ -67,10 +67,13 @@ PersonalConfig/
 
 # Personal local launch helpers
 /*.bat
+/*usage*.md
+/*config*.md
+/*local*.md
+/*personal*.md
 /个人使用说明.md
 /*使用说明*.md
 /*配置*.md
-/个人使用说明.md
 
 # IDE
 .vscode/

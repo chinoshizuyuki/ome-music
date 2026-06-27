@@ -1,45 +1,47 @@
 # Ome Music
 
-A small, immersive desktop music player with NetEase Cloud Music, Bilibili atmosphere video, emotional danmaku, synced lyrics, and a private music curator experience.
+English | [中文](./README.zh-CN.md)
 
-Ome Music is built for local-first listening: the player opens quickly, keeps personal data on your device by default, and hides technical configuration behind a calm music-focused interface.
+A lightweight, immersive desktop music player with NetEase Cloud Music, Bilibili music source, video atmosphere, global danmaku, lyrics, and a private music curator experience.
+
+Ome Music is built for local-first listening. It opens quickly, keeps personal data on your device by default, and keeps technical configuration behind a calm music-focused interface.
 
 ## Highlights
 
-- Immersive Apple Music-inspired player UI
+- Immersive desktop music player
 - Local music import and playback
-- NetEase Cloud Music source integration
-- Bilibili music/video source integration
-- Bilibili video atmosphere layer
-- Global ambient danmaku layer
-- Synced lyrics with offset adjustment
+- NetEase Cloud Music source
+- Bilibili music source
+- Bilibili video atmosphere
+- Global danmaku atmosphere layer
+- Lyrics display and timing offset
 - Lightweight settings system
-- Private DJ / Curator panel
+- Private DJ / Music Curator experience
 - SQLite local library and listening history
-- Tauri-based Windows desktop packaging
+- Tauri-based lightweight desktop app
 
 ## Screenshots
 
-Safe public screenshots are not included yet. Add sanitized images later under:
+Safe public screenshots are not included yet. The images below are placeholders:
 
-- `docs/assets/screenshot-main.png`
-- `docs/assets/screenshot-settings.png`
-- `docs/assets/screenshot-bilibili-atmosphere.png`
+![Ome Music main screenshot placeholder](docs/assets/screenshot-main.png)
 
-Do not commit screenshots that reveal accounts, cookies, private playlists, local paths, or personal listening history.
+![Ome Music settings screenshot placeholder](docs/assets/screenshot-settings.png)
 
-## Download
+Only commit screenshots that are safe for public display. Do not include API keys, cookies, account names, private playlists, logs, local paths, or personal listening history.
 
-For normal use, download the Windows release package from GitHub Releases when available.
+## Installation
 
-Local release builds produce:
+Download the latest Windows build from the [GitHub Releases page](https://github.com/zerolyx/ome-music/releases).
 
-- Portable app: `release/Ome Music.exe`
-- Installer: `release/Ome Music Setup.exe`
+Recommended files:
 
-Release binaries are ignored by Git and should be uploaded through GitHub Releases, not committed to the repository.
+- `Ome.Music.Setup.exe`: Windows installer
+- `Ome.Music.exe`: portable executable
 
-## Development
+This project is currently distributed as an unsigned development release, so Windows may show a security warning on first launch.
+
+## Build From Source
 
 ### Requirements
 
@@ -49,37 +51,43 @@ Release binaries are ignored by Git and should be uploaded through GitHub Releas
 - Tauri CLI through `@tauri-apps/cli`
 - Microsoft Edge WebView2 Runtime
 
-### Install
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-### Run Web Frontend
-
-```bash
-npm run dev
-```
-
-### Run Desktop App
+### Run the desktop app in development
 
 ```bash
 npm run desktop
 ```
 
-### Build Frontend
+Equivalent Tauri command:
+
+```bash
+npm run tauri dev
+```
+
+### Build the frontend
 
 ```bash
 npm run build
 ```
 
-### Build Windows Release
+### Build the Windows release
 
 ```bash
 npm run release:windows
 ```
 
-Tauri will build the frontend from `dist` and package the app without requiring a development server.
+Equivalent Tauri command:
+
+```bash
+npm run tauri build
+```
+
+Tauri builds the frontend from `dist` and packages the app without requiring a development server.
 
 ## Configuration
 
@@ -89,30 +97,37 @@ Configure sources inside the app:
 
 - NetEase Cloud Music: API base URL, login session, optional cookie import
 - Bilibili: public search, optional login session/cookie for account-only content
-- Curator/API: OpenAI-compatible provider name, base URL, API key, model
+- Curator / API Provider: OpenAI-compatible provider name, base URL, API key, and model
 - Voice: optional speech-to-text and text-to-speech providers
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-## Privacy
+## Security and Privacy
 
+- Do not commit API keys.
+- Do not commit cookies or login sessions.
+- Do not commit local databases.
+- Do not commit cache, logs, screenshots, or release binaries.
 - Local music files are referenced by path and are not uploaded.
-- Local audio files are not copied into the application directory.
-- API keys and source credentials should be stored only on the user's local machine.
-- SQLite is used for local metadata, playback history, preferences, lyrics cache, and small text records.
-- Do not commit databases, cookies, tokens, logs, caches, screenshots, or release binaries.
+- Sessions and credentials are intended to stay on the user's local machine.
 
-See [docs/PRIVACY.md](docs/PRIVACY.md).
+See [docs/PRIVACY.md](docs/PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
 ## Disclaimer
 
 This project is for personal learning and local music experience only.
 
-Ome Music does not provide, host, store, or distribute copyrighted music. NetEase Cloud Music, Bilibili, and any third-party content remain the property of their respective platforms and rights holders. Users are responsible for complying with applicable laws and each platform's terms of service.
+Ome Music does not provide, host, store, distribute, or bypass access to copyrighted music. NetEase Cloud Music, Bilibili, and any third-party content remain the property of their respective platforms and rights holders. Users are responsible for complying with applicable laws and each platform's terms of service.
 
-## Security
+## Documentation
 
-If you discover a security issue, do not open a public issue with secrets or exploit details. See [SECURITY.md](SECURITY.md).
+- [Configuration](docs/CONFIGURATION.md)
+- [Build Guide](docs/BUILD.md)
+- [Privacy](docs/PRIVACY.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Third-party Notices](THIRD_PARTY_NOTICES.md)
 
 ## License
 
