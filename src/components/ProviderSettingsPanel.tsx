@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   fetchLlmModels,
   getLlmProviderConfig,
@@ -137,6 +137,14 @@ const neteaseAuthProvider = new NetEaseAccountSessionProvider();
 const bilibiliProvider = new BilibiliMusicProvider();
 const bilibiliAuthProvider = new BilibiliAccountSessionProvider();
 
+// QR 会话状态机：waiting 等待扫码 / scanned 已扫描待确认 / expired 服务端判定过期 / timeout 客户端兜底超时
+type QrSessionStatus = "waiting" | "scanned" | "expired" | "timeout";
+
+// max-life 兜底：服务端不会主动告知超时，需客户端在 QR 失效前停止轮询并保留弹窗供用户重新生成。
+// 网易云二维码官方有效期约 180s；Bilibili 二维码约 200s。
+const NETEASE_QR_MAX_LIFE_MS = 180_000;
+const BILIBILI_QR_MAX_LIFE_MS = 200_000;
+
 export function ProviderSettingsPanel({
   open,
   focus = "all",
@@ -192,6 +200,11 @@ export function ProviderSettingsPanel({
   const [neteaseLoginStatus, setNeteaseLoginStatus] = useState<NetEaseLoginStatus | null>(null);
   const [neteaseVipStatus, setNeteaseVipStatus] = useState<NetEaseVipStatus | null>(null);
   const [neteaseQr, setNeteaseQr] = useState<NetEaseQrLogin | null>(null);
+  // QR 会话状态与起始时间：用于在弹窗内就近显示动态状态、过期/超时后保留弹窗供用户重新生成。
+  const [neteaseQrStatus, setNeteaseQrStatus] = useState<QrSessionStatus>("waiting");
+  const neteaseQrStartedAtRef = useRef<number>(0);
+  const [bilibiliQrStatus, setBilibiliQrStatus] = useState<QrSessionStatus>("waiting");
+  const bilibiliQrStartedAtRef = useRef<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
@@ -237,7 +250,11 @@ export function ProviderSettingsPanel({
     setStorageMessage(null);
     setNeteaseUserPlaylists([]);
     setNeteaseQr(null);
+    setNeteaseQrStatus("waiting");
+    neteaseQrStartedAtRef.current = 0;
     setBilibiliQr(null);
+    setBilibiliQrStatus("waiting");
+    bilibiliQrStartedAtRef.current = 0;
     setNeteaseLoginStatus(null);
     setNeteaseVipStatus(null);
     setNeteasePassword("");
@@ -294,6 +311,8 @@ export function ProviderSettingsPanel({
 
   useEffect(() => {
     if (!open || !neteaseQr) return;
+    // 已进入终态（过期/超时）后停止轮询，但保留弹窗让用户点「重新生成」。
+    if (neteaseQrStatus === "expired" || neteaseQrStatus === "timeout") return;
 
     let cancelled = false;
     let inFlight = false;
@@ -301,8 +320,24 @@ export function ProviderSettingsPanel({
       if (inFlight || cancelled) return;
       inFlight = true;
       try {
+        // 客户端 max-life 兜底：服务端仅在 QR 真正过期时才回 expired，
+        // 但若网络异常或服务端长时间不返回 expired，需在失效前主动停止。
+        const elapsed = Date.now() - neteaseQrStartedAtRef.current;
+        if (elapsed > NETEASE_QR_MAX_LIFE_MS) {
+          setNeteaseQrStatus("timeout");
+          setSourceMessage("二维码已超时，请重新生成 / QR timed out, regenerate to try again.");
+          return;
+        }
+
         const result = await neteaseAuthProvider.checkQrLoginStatus(neteaseQr.key);
         if (cancelled) return;
+
+        // 同步本地状态机：confirmed（已扫描待确认）映射为 scanned，其余维持。
+        if (result.status === "confirmed") {
+          setNeteaseQrStatus("scanned");
+        } else if (result.status === "waiting") {
+          setNeteaseQrStatus("waiting");
+        }
 
         setSourceMessage(qrStatusMessage(result.status));
         if (result.loginStatus) {
@@ -315,13 +350,15 @@ export function ProviderSettingsPanel({
           setNeteaseVipStatus(vip);
           setMusicSourceConfig(savedMusicSourceConfig);
           setNeteaseQr(null);
+          setNeteaseQrStatus("waiting");
           setSourceMessage(
             result.loginStatus.loggedIn
               ? "Connected to NetEase Cloud Music."
               : result.loginStatus.message,
           );
         } else if (result.status === "expired") {
-          setNeteaseQr(null);
+          // 不关闭弹窗，就地保留并提示用户重新生成。
+          setNeteaseQrStatus("expired");
         }
       } catch (error) {
         if (!cancelled) setSourceMessage(`Could not check the sign-in code. ${readError(error)}`);
@@ -336,10 +373,12 @@ export function ProviderSettingsPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, neteaseQr]);
+  }, [open, neteaseQr, neteaseQrStatus]);
 
   useEffect(() => {
     if (!open || !bilibiliQr) return;
+    // 已进入终态（过期/超时）后停止轮询，但保留弹窗让用户点「重新生成」。
+    if (bilibiliQrStatus === "expired" || bilibiliQrStatus === "timeout") return;
 
     let cancelled = false;
     let inFlight = false;
@@ -347,8 +386,23 @@ export function ProviderSettingsPanel({
       if (cancelled || inFlight) return;
       inFlight = true;
       try {
+        // 客户端 max-life 兜底：与 NetEase 同样的防御逻辑。
+        const elapsed = Date.now() - bilibiliQrStartedAtRef.current;
+        if (elapsed > BILIBILI_QR_MAX_LIFE_MS) {
+          setBilibiliQrStatus("timeout");
+          setSourceMessage("二维码已超时，请重新生成 / QR timed out, regenerate to try again.");
+          return;
+        }
+
         const result = await bilibiliAuthProvider.checkQrLoginStatus(bilibiliQr.key);
         if (cancelled) return;
+
+        if (result.status === "confirmed") {
+          setBilibiliQrStatus("scanned");
+        } else if (result.status === "waiting") {
+          setBilibiliQrStatus("waiting");
+        }
+
         setSourceMessage(qrStatusMessage(result.status));
         if (result.loginStatus) {
           const savedConfig = await getBilibiliSourceConfig();
@@ -356,13 +410,15 @@ export function ProviderSettingsPanel({
           setBilibiliLoginStatus(result.loginStatus);
           setBilibiliConfig(savedConfig);
           setBilibiliQr(null);
+          setBilibiliQrStatus("waiting");
           setSourceMessage(
             result.loginStatus.loggedIn
               ? "Bilibili 已连接 / Connected."
               : result.loginStatus.message,
           );
         } else if (result.status === "expired") {
-          setBilibiliQr(null);
+          // 不关闭弹窗，就地保留并提示用户重新生成。
+          setBilibiliQrStatus("expired");
         }
       } catch (error) {
         if (!cancelled) setSourceMessage(`无法检查 Bilibili 登录状态 / ${readError(error)}`);
@@ -377,7 +433,7 @@ export function ProviderSettingsPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [bilibiliQr, open]);
+  }, [bilibiliQr, open, bilibiliQrStatus]);
 
   useEffect(() => {
     if (smsCooldown <= 0) return;
@@ -433,31 +489,21 @@ export function ProviderSettingsPanel({
         apiKey: apiKey.trim() || undefined,
       });
       const savedSpeechConfig = saveSpeechProviderConfig(speechConfig);
-      const savedMusicSourceConfig = await saveNeteaseSourceConfig({
-        enabled: neteaseEnabled,
-        baseUrl: neteaseBaseUrl,
+      // 复用统一草稿保存入口：消除分散的同步代码，并确保 token 路径与 importCookie 一致
+      const savedMusicSourceConfig = await saveSourceDraft({
         token: neteaseToken.trim() || undefined,
       });
-      const savedBilibiliConfig = await saveBilibiliSourceConfig({
-        enabled: bilibiliEnabled,
-        baseUrl: bilibiliBaseUrl,
-        token: undefined,
-        searchScope: bilibiliSearchScope,
+      const savedBilibiliConfig = await saveBilibiliDraft({
+        token: bilibiliToken.trim() || undefined,
       });
       setConfig(savedConfig);
       setSpeechConfig(savedSpeechConfig);
-      setMusicSourceConfig(savedMusicSourceConfig);
-      setNeteaseEnabled(savedMusicSourceConfig.enabled);
-      setNeteaseBaseUrl(savedMusicSourceConfig.baseUrl);
-      setNeteaseToken("");
-      setBilibiliConfig(savedBilibiliConfig);
-      setBilibiliEnabled(savedBilibiliConfig.enabled);
-      setBilibiliBaseUrl(savedBilibiliConfig.baseUrl);
-      setBilibiliSearchScope(savedBilibiliConfig.searchScope);
       setProviderName(savedConfig.providerName);
       setBaseUrl(savedConfig.baseUrl);
       setModel(savedConfig.model);
       setApiKey("");
+      void savedMusicSourceConfig;
+      void savedBilibiliConfig;
       setMessage(
         savedConfig.configured
           ? "Saved. The curator will use this source first."
@@ -488,15 +534,18 @@ export function ProviderSettingsPanel({
     }
   };
 
-  const saveSourceDraft = async () => {
+  const saveSourceDraft = async (options?: { token?: string }) => {
+    // 统一的 NetEase 草稿保存入口：默认不传 token（保持现有 token 不变），
+    // 全局 Save 显式传入用户填写的 token。所有保存路径收敛到此处，避免分散的同步代码漏字段。
     const savedMusicSourceConfig = await saveNeteaseSourceConfig({
       enabled: neteaseEnabled,
       baseUrl: neteaseBaseUrl,
-      token: undefined,
+      token: options?.token,
     });
     setMusicSourceConfig(savedMusicSourceConfig);
     setNeteaseEnabled(savedMusicSourceConfig.enabled);
     setNeteaseBaseUrl(savedMusicSourceConfig.baseUrl);
+    if (options?.token !== undefined) setNeteaseToken("");
     return savedMusicSourceConfig;
   };
 
@@ -521,17 +570,19 @@ export function ProviderSettingsPanel({
     }
   };
 
-  const saveBilibiliDraft = async () => {
+  const saveBilibiliDraft = async (options?: { token?: string }) => {
+    // 统一的 Bilibili 草稿保存入口：与 saveSourceDraft 同样的语义。
     const savedConfig = await saveBilibiliSourceConfig({
       enabled: bilibiliEnabled,
       baseUrl: bilibiliBaseUrl,
-      token: undefined,
+      token: options?.token,
       searchScope: bilibiliSearchScope,
     });
     setBilibiliConfig(savedConfig);
     setBilibiliEnabled(savedConfig.enabled);
     setBilibiliBaseUrl(savedConfig.baseUrl);
     setBilibiliSearchScope(savedConfig.searchScope);
+    if (options?.token !== undefined) setBilibiliToken("");
     return savedConfig;
   };
 
@@ -547,7 +598,7 @@ export function ProviderSettingsPanel({
       });
       setSourceMessage(result);
     } catch (error) {
-      setSourceMessage(`Bilibili is quiet tonight. ${readError(error)}`);
+      setSourceMessage(`Bilibili 连接测试失败 / Bilibili test failed: ${readError(error)}`);
     } finally {
       setTestingBilibili(false);
     }
@@ -574,14 +625,8 @@ export function ProviderSettingsPanel({
     setCheckingBilibili(true);
     setSourceMessage(null);
     try {
-      const savedConfig = await saveBilibiliSourceConfig({
-        enabled: bilibiliEnabled,
-        baseUrl: bilibiliBaseUrl,
-        token: bilibiliToken.trim(),
-        searchScope: bilibiliSearchScope,
-      });
-      setBilibiliConfig(savedConfig);
-      setBilibiliToken("");
+      // 复用 saveBilibiliDraft，token 由它统一保存并清空输入框
+      await saveBilibiliDraft({ token: bilibiliToken.trim() });
       const status = await bilibiliAuthProvider.getLoginStatus();
       setBilibiliLoginStatus(status);
       setSourceMessage(status.loggedIn ? "Connected to Bilibili." : status.message);
@@ -598,6 +643,8 @@ export function ProviderSettingsPanel({
     try {
       await saveBilibiliDraft();
       const qr = await bilibiliAuthProvider.createQrLogin();
+      bilibiliQrStartedAtRef.current = Date.now();
+      setBilibiliQrStatus("waiting");
       setBilibiliQr(qr);
       setSourceMessage(
         "请使用哔哩哔哩扫码，手机确认后会自动连接。 / Scan with Bilibili and confirm on your phone.",
@@ -646,6 +693,8 @@ export function ProviderSettingsPanel({
     try {
       await saveSourceDraft();
       const qr = await neteaseAuthProvider.createQrLogin();
+      neteaseQrStartedAtRef.current = Date.now();
+      setNeteaseQrStatus("waiting");
       setNeteaseQr(qr);
       setSourceMessage(
         "Scan the code with NetEase Cloud Music. This page will connect automatically.",
@@ -1064,7 +1113,7 @@ export function ProviderSettingsPanel({
                         muted={!config.configured}
                       />
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       <OverviewLink
                         icon={Cloud}
                         title="管理音乐来源"
@@ -1082,12 +1131,6 @@ export function ProviderSettingsPanel({
                         title="鉴赏家与声音"
                         subtitle="Curator & Voice"
                         onClick={() => setActiveSection("curator")}
-                      />
-                      <OverviewLink
-                        icon={HardDrive}
-                        title="查看存储占用"
-                        subtitle="Storage"
-                        onClick={() => setActiveSection("storage")}
                       />
                     </div>
                   </div>
@@ -1141,7 +1184,13 @@ export function ProviderSettingsPanel({
                           onChange={(event) => setModel(event.target.value)}
                           placeholder="Select or type a model"
                           className="settings-input"
+                          list="ome-curator-models"
                         />
+                        <datalist id="ome-curator-models">
+                          {availableModels.map((modelId) => (
+                            <option key={modelId} value={modelId} />
+                          ))}
+                        </datalist>
                         <button
                           type="button"
                           onClick={fetchModels}
@@ -1162,32 +1211,6 @@ export function ProviderSettingsPanel({
                       </div>
                     </Field>
                   </>
-                )}
-
-                {activeSection === "curator" && availableModels.length > 0 && (
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-medium text-white/36">
-                      Available Models / 可用模型
-                    </span>
-                    <div className="relative">
-                      <select
-                        value={model}
-                        onChange={(event) => setModel(event.target.value)}
-                        className="settings-input appearance-none pr-11"
-                      >
-                        {availableModels.map((modelId) => (
-                          <option
-                            key={modelId}
-                            value={modelId}
-                            className="bg-graphite-950 text-white"
-                          >
-                            {modelId}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/38" />
-                    </div>
-                  </label>
                 )}
 
                 {activeSection === "curator" && modelMessage && (
@@ -1397,24 +1420,12 @@ export function ProviderSettingsPanel({
                 {activeSection === "advanced" && (
                   <div className="space-y-5">
                     <SettingsIntro title="高级设置" subtitle="Diagnostics and quiet maintenance." />
-                    <div className="settings-surface grid gap-3 sm:grid-cols-2">
-                      <OverviewLink
-                        icon={HardDrive}
-                        title="存储与缓存"
-                        subtitle="Storage Management"
-                        onClick={() => setActiveSection("storage")}
-                      />
-                      <OverviewLink
-                        icon={FileDown}
-                        title="导出诊断报告"
-                        subtitle="Export Diagnostics"
-                        onClick={exportDiagnostics}
-                      />
-                    </div>
                     <div className="settings-surface">
                       <p className="text-sm font-semibold text-white/74">Local-first / 本地优先</p>
                       <p className="mt-2 text-xs leading-6 text-white/36">
                         本地曲目只保存路径，不复制音频；流媒体默认不下载整首歌曲；敏感配置不会在界面中明文展示。
+                        Local songs are never copied; streaming is not downloaded by default;
+                        sensitive values stay masked.
                       </p>
                     </div>
                   </div>
@@ -1564,7 +1575,7 @@ export function ProviderSettingsPanel({
                           ) : (
                             <QrCode className="h-4 w-4" />
                           )}
-                          QR Login / 扫码登录
+                          {neteaseQr ? "重新生成 / New Code" : "扫码登录 / QR Login"}
                         </button>
                         <button
                           type="button"
@@ -1599,10 +1610,29 @@ export function ProviderSettingsPanel({
                               Scan with NetEase / 使用网易云扫码
                             </p>
                             <p className="mt-2 text-sm leading-6 text-white/42">
-                              {isCheckingLogin
-                                ? "Waiting for scan… 等待扫码确认…"
-                                : "Confirm on your phone. 手机确认后会自动连接。"}
+                              {neteaseQrStatus === "waiting" && "等待扫码确认… / Waiting for scan…"}
+                              {neteaseQrStatus === "scanned" &&
+                                "已扫描，请在手机上确认 / Scanned. Confirm on your phone."}
+                              {neteaseQrStatus === "expired" &&
+                                "二维码已过期，请重新生成 / QR code expired. Regenerate to try again."}
+                              {neteaseQrStatus === "timeout" &&
+                                "等待超时，请重新生成 / Timed out. Regenerate to try again."}
                             </p>
+                            {(neteaseQrStatus === "expired" || neteaseQrStatus === "timeout") && (
+                              <button
+                                type="button"
+                                onClick={createQrLogin}
+                                disabled={isCreatingQr || !neteaseEnabled || !neteaseBaseUrl.trim()}
+                                className="app-transition mt-3 inline-flex h-9 w-fit items-center justify-center gap-2 rounded-full bg-white/[0.1] px-4 text-xs font-semibold text-white/72 hover:bg-white/[0.18] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                {isCreatingQr ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                )}
+                                重新生成 / Regenerate
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1824,6 +1854,7 @@ export function ProviderSettingsPanel({
                         searchScope={bilibiliSearchScope}
                         loginStatus={bilibiliLoginStatus}
                         qr={bilibiliQr}
+                        qrStatus={bilibiliQrStatus}
                         isTesting={isTestingBilibili}
                         isChecking={isCheckingBilibili}
                         isCreatingQr={isCreatingBilibiliQr}
@@ -1988,134 +2019,18 @@ export function ProviderSettingsPanel({
                 )}
 
                 {activeSection === "storage" && (
-                  <div className="space-y-4">
-                    <SettingsIntro
-                      title="存储管理"
-                      subtitle="See what Ome keeps, and clear only what is safe."
-                    />
-                    <div className="settings-surface">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStorageOpen((value) => !value);
-                          void refreshStorageReport();
-                        }}
-                        className="app-transition flex w-full items-center justify-between gap-4 px-4 py-4 text-left hover:bg-white/[0.035]"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.07] text-white/64">
-                            <HardDrive className="h-4 w-4" />
-                          </span>
-                          <div>
-                            <h3 className="text-sm font-semibold text-white/84">
-                              存储管理 / Storage
-                            </h3>
-                            <p className="mt-1 text-xs text-white/36">
-                              {storageReport
-                                ? `缓存 ${storageReport.totalCacheDisplaySize} · 数据库 ${storageReport.database.displaySize}`
-                                : "查看缓存大小，不删除音乐文件。"}
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronDown
-                          className={`h-4 w-4 text-white/42 transition ${isStorageOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-
-                      {isStorageOpen && (
-                        <div className="space-y-4 border-t border-white/[0.06] p-4">
-                          {storageReport ? (
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <StorageRow
-                                icon={HardDrive}
-                                label="应用缓存 / App Cache"
-                                value={storageReport.appCache.displaySize}
-                              />
-                              <StorageRow
-                                icon={HardDrive}
-                                label="WebView 缓存 / WebView Cache"
-                                value={`${storageReport.webviewCache.displaySize} (自动管理)`}
-                              />
-                              <StorageRow
-                                icon={Music2}
-                                label="封面缓存 / Cover Cache"
-                                value={storageReport.coverCache.displaySize}
-                              />
-                              <StorageRow
-                                icon={ListMusic}
-                                label="歌词缓存 / Lyrics Cache"
-                                value={storageReport.lyricsCache.displaySize}
-                              />
-                              <StorageRow
-                                icon={FileDown}
-                                label="日志 / Logs"
-                                value={storageReport.logs.displaySize}
-                              />
-                              <StorageRow
-                                icon={Database}
-                                label="数据库 / Database"
-                                value={storageReport.database.displaySize}
-                              />
-                            </div>
-                          ) : (
-                            <p className="text-sm text-white/42">
-                              正在读取存储状态 / Reading storage state...
-                            </p>
-                          )}
-
-                          <div className="grid gap-2 md:grid-cols-5">
-                            <StorageAction
-                              label="清理应用缓存"
-                              sublabel="Clear App Cache"
-                              kind="appCache"
-                              activeKind={clearingStorageKind}
-                              onClick={clearStorage}
-                            />
-                            <StorageAction
-                              label="清理封面缓存"
-                              sublabel="Clear Cover Cache"
-                              kind="coverCache"
-                              activeKind={clearingStorageKind}
-                              onClick={clearStorage}
-                            />
-                            <StorageAction
-                              label="清理歌词缓存"
-                              sublabel="Clear Lyrics Cache"
-                              kind="lyricsCache"
-                              activeKind={clearingStorageKind}
-                              onClick={clearStorage}
-                            />
-                            <StorageAction
-                              label="清理日志"
-                              sublabel="Clear Logs"
-                              kind="logs"
-                              activeKind={clearingStorageKind}
-                              onClick={clearStorage}
-                            />
-                            <button
-                              type="button"
-                              onClick={exportDiagnostics}
-                              className="app-transition inline-flex min-h-12 flex-col items-center justify-center rounded-[18px] bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white/62 hover:bg-white/[0.12] hover:text-white"
-                            >
-                              <span>导出诊断</span>
-                              <span className="text-[10px] text-white/36">Export Diagnostics</span>
-                            </button>
-                          </div>
-
-                          <p className="text-xs leading-5 text-white/34">
-                            音乐缓存默认
-                            0MB；网易云歌曲保持流式播放；本地音乐只保存路径，不复制文件。 Music
-                            cache is off by default. Local songs are never copied here.
-                          </p>
-                          {storageMessage && (
-                            <p className="rounded-[16px] bg-white/[0.045] px-3 py-2 text-xs leading-5 text-white/52">
-                              {storageMessage}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <StoragePanel
+                    isOpen={isStorageOpen}
+                    onToggle={() => {
+                      setStorageOpen((value) => !value);
+                      void refreshStorageReport();
+                    }}
+                    report={storageReport}
+                    clearingKind={clearingStorageKind}
+                    message={storageMessage}
+                    onClear={clearStorage}
+                    onExportDiagnostics={exportDiagnostics}
+                  />
                 )}
 
                 {(activeSection === "sources" || activeSection === "curator") && (
@@ -2166,6 +2081,7 @@ function BilibiliSourceSettings({
   searchScope,
   loginStatus,
   qr,
+  qrStatus,
   isTesting,
   isChecking,
   isCreatingQr,
@@ -2190,6 +2106,7 @@ function BilibiliSourceSettings({
   searchScope: BilibiliSourceConfig["searchScope"];
   loginStatus: BilibiliLoginStatus | null;
   qr: NetEaseQrLogin | null;
+  qrStatus: QrSessionStatus;
   isTesting: boolean;
   isChecking: boolean;
   isCreatingQr: boolean;
@@ -2305,10 +2222,29 @@ function BilibiliSourceSettings({
                 使用哔哩哔哩扫码 / Scan with Bilibili
               </p>
               <p className="mt-2 text-xs leading-5 text-white/38">
-                {isChecking
-                  ? "等待扫码确认… Waiting for scan…"
-                  : "手机确认后这里会自动完成连接，无需手动复制 Cookie。"}
+                {qrStatus === "waiting" && "等待扫码确认… / Waiting for scan…"}
+                {qrStatus === "scanned" &&
+                  "已扫描，请在手机上确认 / Scanned. Confirm on your phone."}
+                {qrStatus === "expired" &&
+                  "二维码已过期，请重新生成 / QR code expired. Regenerate to try again."}
+                {qrStatus === "timeout" &&
+                  "等待超时，请重新生成 / Timed out. Regenerate to try again."}
               </p>
+              {(qrStatus === "expired" || qrStatus === "timeout") && (
+                <button
+                  type="button"
+                  onClick={onCreateQr}
+                  disabled={isCreatingQr || !enabled}
+                  className="app-transition mt-3 inline-flex h-9 w-fit items-center justify-center gap-2 rounded-full bg-white/[0.1] px-4 text-xs font-semibold text-white/72 hover:bg-white/[0.18] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {isCreatingQr ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  重新生成 / Regenerate
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -2399,6 +2335,142 @@ function BilibiliSourceSettings({
             : (loginStatus?.message ?? "Public content is available.")
         }
       />
+    </div>
+  );
+}
+
+// 存储管理面板：将原本散落在主面板 JSX 中的 ~130 行存储 UI 收敛为单一组件。
+// 状态仍在主面板持有 —— 让 storageReport 在切换 section 之间持久，避免来回切换时重新拉取。
+function StoragePanel({
+  isOpen,
+  onToggle,
+  report,
+  clearingKind,
+  message,
+  onClear,
+  onExportDiagnostics,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  report: StorageReport | null;
+  clearingKind: StorageBucketKind | null;
+  message: string | null;
+  onClear: (kind: StorageBucketKind) => void;
+  onExportDiagnostics: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <SettingsIntro title="存储管理" subtitle="See what Ome keeps, and clear only what is safe." />
+      <div className="settings-surface">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="app-transition flex w-full items-center justify-between gap-4 px-4 py-4 text-left hover:bg-white/[0.035]"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.07] text-white/64">
+              <HardDrive className="h-4 w-4" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-white/84">存储管理 / Storage</h3>
+              <p className="mt-1 text-xs text-white/36">
+                {report
+                  ? `缓存 ${report.totalCacheDisplaySize} · 数据库 ${report.database.displaySize}`
+                  : "查看缓存大小，不删除音乐文件。"}
+              </p>
+            </div>
+          </div>
+          <ChevronDown
+            className={`h-4 w-4 text-white/42 transition ${isOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {isOpen && (
+          <div className="space-y-4 border-t border-white/[0.06] p-4">
+            {report ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <StorageRow
+                  icon={HardDrive}
+                  label="应用缓存 / App Cache"
+                  value={report.appCache.displaySize}
+                />
+                <StorageRow
+                  icon={HardDrive}
+                  label="WebView 缓存 / WebView Cache"
+                  value={`${report.webviewCache.displaySize} (自动管理)`}
+                />
+                <StorageRow
+                  icon={Music2}
+                  label="封面缓存 / Cover Cache"
+                  value={report.coverCache.displaySize}
+                />
+                <StorageRow
+                  icon={ListMusic}
+                  label="歌词缓存 / Lyrics Cache"
+                  value={report.lyricsCache.displaySize}
+                />
+                <StorageRow icon={FileDown} label="日志 / Logs" value={report.logs.displaySize} />
+                <StorageRow
+                  icon={Database}
+                  label="数据库 / Database"
+                  value={report.database.displaySize}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-white/42">正在读取存储状态 / Reading storage state...</p>
+            )}
+
+            <div className="grid gap-2 md:grid-cols-5">
+              <StorageAction
+                label="清理应用缓存"
+                sublabel="Clear App Cache"
+                kind="appCache"
+                activeKind={clearingKind}
+                onClick={onClear}
+              />
+              <StorageAction
+                label="清理封面缓存"
+                sublabel="Clear Cover Cache"
+                kind="coverCache"
+                activeKind={clearingKind}
+                onClick={onClear}
+              />
+              <StorageAction
+                label="清理歌词缓存"
+                sublabel="Clear Lyrics Cache"
+                kind="lyricsCache"
+                activeKind={clearingKind}
+                onClick={onClear}
+              />
+              <StorageAction
+                label="清理日志"
+                sublabel="Clear Logs"
+                kind="logs"
+                activeKind={clearingKind}
+                onClick={onClear}
+              />
+              <button
+                type="button"
+                onClick={onExportDiagnostics}
+                className="app-transition inline-flex min-h-12 flex-col items-center justify-center rounded-[18px] bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white/62 hover:bg-white/[0.12] hover:text-white"
+              >
+                <span>导出诊断</span>
+                <span className="text-[10px] text-white/36">Export Diagnostics</span>
+              </button>
+            </div>
+
+            <p className="text-xs leading-5 text-white/34">
+              音乐缓存默认 0MB；网易云歌曲保持流式播放；本地音乐只保存路径，不复制文件。 Music cache
+              is off by default. Local songs are never copied here.
+            </p>
+            {message && (
+              <p className="rounded-[16px] bg-white/[0.045] px-3 py-2 text-xs leading-5 text-white/52">
+                {message}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2637,6 +2709,17 @@ function DanmakuSettingsCard({
         ]}
         columns="sm:grid-cols-4"
         onChange={(entranceStyle) => onChange({ entranceStyle })}
+      />
+      <DanmakuChoiceGroup
+        label="运动方向 / Direction"
+        value={settings.direction}
+        options={[
+          ["rtl", "从右向左", "RTL"],
+          ["ltr", "从左向右", "LTR"],
+          ["mixed", "双向混合", "Mixed"],
+        ]}
+        columns="sm:grid-cols-3"
+        onChange={(direction) => onChange({ direction })}
       />
       <div className="grid gap-3 sm:grid-cols-4">
         <ToggleLine

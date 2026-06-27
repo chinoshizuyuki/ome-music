@@ -559,5 +559,5 @@ function friendlyVoiceError(error: unknown): string {
   if (/too short|enough/i.test(message)) return "The recording is too short.";
   if (/transcription|speech source/i.test(message))
     return "Transcription failed. Please try again.";
-  return "The microphone line is quiet tonight. Please try again.";
+  return "语音输入失败，请稍后再试 / Voice input failed, please try again.";
 }

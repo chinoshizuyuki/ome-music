@@ -87,6 +87,17 @@ jobs:
             - **Docker 镜像**：`ome-netease-api`（网易云 API 服务）与 `ome-build-env`（Tauri Linux 构建环境）跟随版本 tag 推送到 GHCR。
             - **贡献者**：欢迎 [@chinokoyuki](https://github.com/chinokoyuki) 加入，贡献 CI/CD 流水线（[PR #2](https://github.com/zerolyx/ome-music/pull/2)）。
 
+            ### 第二轮审查优化（P0 / P1 / P2）
+            - **P0 Bilibili token 无法保存**：`save()` 硬编码 `token: undefined` 导致 Bilibili token 永远不写入。改为 `token: bilibiliToken.trim() || undefined`，并复用统一草稿保存入口。
+            - **P0 QR 过期/超时无兜底**：新增 `QrSessionStatus` 状态机（waiting / scanned / expired / timeout）+ max-life 兜底（网易云 180s / Bilibili 200s），过期/超时后保留弹窗供「重新生成 / Regenerate」。
+            - **P0 未启用源搜索无提示**：新增 `SourceDisabledHint` 组件 + 「启用 / Enable」按钮直达设置，未启用源不再静默不渲染。
+            - **P1 多重保存路径收敛**：`saveSourceDraft({ token? })` / `saveBilibiliDraft({ token? })` 收敛分散的 token 保存逻辑。
+            - **P1 搜索结果分页**：移除 `slice(0, 12)` 丢失 8 条的问题，新增 `ShowMoreButton` 客户端分页（每页 6 条）。
+            - **P1 danmaku direction UI 补齐**：新增 `DanmakuChoiceGroup` 控件，补齐 rtl / ltr / mixed 方向选择。
+            - **P1 诗意文案 → 中英双语直白文案**：统一 9 处模糊错误为「中文 / English」格式（Rust 4 处 + 前端 5 处），DJ 风格状态文案保留。
+            - **P2 StoragePanel 抽取**：~130 行存储 UI 收敛为单一组件。
+            - **P2 设置面板冗余 UI 清理**：存储入口 3→1、导出诊断 2→1、模型 input+select 合并为 input+datalist 单控件。
+
             ---
 
             ## 新手使用教程

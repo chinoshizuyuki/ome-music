@@ -1210,6 +1210,10 @@ export default function App() {
         onPlayLocal={playLocalTrack}
         onPlayNetEase={playNetEaseSong}
         onPlayBilibili={playBilibiliSong}
+        onOpenSettings={() => {
+          setSettingsFocus("music");
+          setProviderSettingsOpen(true);
+        }}
       />
 
       <LyricsSourceMenu

@@ -1012,7 +1012,7 @@ async fn test_bilibili_source_connection(
         message: if ok {
             "Connected. Bilibili is ready.".to_string()
         } else {
-            "The source is quiet tonight.".to_string()
+            "Bilibili 暂不可用 / Bilibili source is not available".to_string()
         },
     })
 }
@@ -3689,7 +3689,7 @@ async fn request_bilibili_json(
 ) -> Result<serde_json::Value, String> {
     let text = request_bilibili_text(config, path, query).await?;
     serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|_| "The source is quiet tonight.".to_string())
+        .map_err(|_| "Bilibili 响应解析失败 / Failed to parse Bilibili response".to_string())
 }
 
 fn cookie_header_from_response(response: &reqwest::Response) -> Option<String> {
@@ -3776,10 +3776,9 @@ async fn request_bilibili_text(
         request = request.header("Cookie", cookie);
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("The source is quiet tonight. {error}"))?;
+    let response = request.send().await.map_err(|error| {
+        format!("Bilibili 请求失败：{error} / Bilibili request failed: {error}")
+    })?;
     let status = response.status();
     if status.as_u16() == 412 {
         return Err(
@@ -4343,7 +4342,7 @@ async fn request_bilibili_danmaku_xml(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("Danmaku is quiet tonight. {error}"))?;
+        .map_err(|error| format!("弹幕请求失败：{error} / Danmaku request failed: {error}"))?;
     let status = response.status();
     if !status.is_success() {
         return Err(format!(

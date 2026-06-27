@@ -8,6 +8,14 @@
 
 ## [Unreleased]
 
+（暂无未发布的变更 / No unreleased changes yet.）
+
+---
+
+## [0.3.1] — 2026-06-28
+
+> 本次为 0.3 系列修复版，聚焦 v0.3.0 发布后两轮全面审查的优化与修复。
+
 ### 全面审查修复（功能 / UI / 体验）
 
 #### 播放体验
@@ -53,6 +61,28 @@
 ### 变更
 - CI/CD 配置文件提取自 PR #2，未合并该 PR 中的 43 个源码改动（与 v0.3 代码已分叉，直接合并会回滚 v0.3 的引导界面与登录修复）。
 - `release.yml` 中 Docker 构建任务与既有中文 releaseBody 并存，未覆盖原有版本说明。
+
+### 第二轮审查优化（P0 / P1 / P2）
+
+#### P0 紧急修复
+- **Bilibili token 无法保存**：`save()` 中 `saveBilibiliDraft({ token: undefined })` 硬编码 undefined，token 永远不写入。改为 `token: bilibiliToken.trim() || undefined`，并复用统一草稿保存入口。
+- **QR 过期/超时无兜底**：原轮询仅在服务端返回 expired 时停止，无客户端兜底；过期后 `setXxxQr(null)` 让弹窗直接消失。新增 `QrSessionStatus` 状态机（waiting / scanned / expired / timeout）+ `startedAtRef` + max-life 兜底（网易云 180s / Bilibili 200s），终态保留弹窗供「重新生成 / Regenerate」。
+- **未启用源搜索无提示**：搜索时未启用的源结果块直接不渲染，用户不知为何搜不到。新增 `SourceDisabledHint` 组件 + `onOpenSettings` 回调，未启用源显示「启用 / Enable」按钮直达设置。
+
+#### P1 体验完善
+- **多重保存路径收敛**：`save()` 与 `importBilibiliCookie` 各自直接调用底层保存，token 处理分散。`saveSourceDraft({ token? })` / `saveBilibiliDraft({ token? })` 升级支持可选 token，两处复用。
+- **搜索结果分页**：`TopSearch` 对网易云结果 `slice(0, 12)` 丢弃 8 条且无分页。移除 slice 保留全部，新增 `ShowMoreButton` 客户端分页（每页 6 条）。
+- **danmaku direction UI 补齐**：`danmakuSettings` 已有 `direction` 字段（rtl / ltr / mixed）但 UI 无控件。新增 `DanmakuChoiceGroup` 控件。
+- **诗意文案 → 中英双语直白文案**：统一 9 处模糊诗意错误为「中文 / English」直白格式 —— Rust 后端 4 处（Bilibili 暂不可用 / 响应解析失败 / 请求失败 / 弹幕请求失败）+ 前端 5 处（Bilibili / NetEase 搜索失败、Bilibili 测试失败、语音输入失败）。DJ 风格英文状态文案（Tuning the room 等）保留。
+
+#### P2 工程化
+- **StoragePanel 展示型组件抽取**：将主面板中 ~130 行存储 UI 收敛为单一 `StoragePanel` 组件（同文件，沿用 `BilibiliSourceSettings` 模式），状态仍在主面板持有（`exportDiagnostics` 与「高级」段共享）。
+- **设置面板冗余 UI 清理**：存储入口 3→1（移除 overview 与 advanced 的存储快捷入口，仅保留侧栏）；导出诊断 2→1（移除 advanced 的导出诊断链接，仅保留存储面板内）；模型 input+select 双控件合并为 input+datalist 单控件。
+- **文档同步**：CHANGELOG 更新至 0.3.1；README 版本号同步。
+
+### 变更（版本号）
+- 版本号 `0.3.0` → `0.3.1`（package.json / tauri.conf.json / Cargo.toml / Cargo.lock / README / BUILD）。
+- Release 页面 releaseBody 追加第二轮 P0 / P1 / P2 修复说明。
 
 ---
 
