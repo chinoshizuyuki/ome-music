@@ -4681,6 +4681,7 @@ async fn request_netease_json_response(
     }
 
     let endpoint = format!("{}{}", config.base_url.trim_end_matches('/'), path);
+    let endpoint_for_error = endpoint.clone();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -4703,7 +4704,7 @@ async fn request_netease_json_response(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("无法连接网易云 API 服务 ({endpoint})。 / Could not reach the NetEase API. {error}"))?;
+        .map_err(|error| format!("无法连接网易云 API 服务 ({endpoint_for_error})。 / Could not reach the NetEase API. {error}"))?;
     let status = response.status();
     let set_cookie = response
         .headers()
