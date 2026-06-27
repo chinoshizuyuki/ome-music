@@ -64,17 +64,28 @@ jobs:
 
             ## 本次更新 / What's New in ${{ github.ref_name }}
 
-            ### 新手引导
-            - **首次启动新手引导**：打开软件时自动展示 5 步引导（欢迎 → 导入本地音乐 → 连接网易云 → 连接 Bilibili → 就绪），含进度条、步骤指示器、完成状态徽章与 CTA 按钮。
-            - **跳过引导**：每一步均可点击右上角「跳过引导」按钮，跳过后不再自动弹出；设置 → 使用指南中可随时「重新查看新手引导」。
+            ### 紧急修复（v0.3.0 回归问题）
+            - **网易云扫码登录弹窗不出现**：恢复非阻断式的本地 API 预检，扫码与搜索请求不再被环境检查卡死，点击「扫码登录」即可正常弹出二维码。
+            - **启用网易云后搜索不到歌曲**：同一根因修复；同时搜索失败时透出后端真实错误（如「NetEase API 未连接，请检查本地服务」），而非笼统的「outside source is quiet」。
 
-            ### 登录修复
-            - **Bilibili 扫码登录修复**：将 QR 登录接口的 User-Agent 从简化的 "Mozilla/5.0 OmeMusic" 改为完整浏览器 UA（与搜索等其他 Bilibili 调用一致），并新增 Origin 与 Accept 头，解决 Bilibili passport API 拒绝非浏览器请求导致扫码失败的问题。
-            - **网易云扫码登录修复**：移除多余的 `noCookie=true` 参数（login_qr_check 模块本身已在响应体返回 cookie），避免部分 API 版本下 cookie 获取异常；当扫码成功但 cookie 缺失时返回明确错误而非静默失败。
-            - **更精确的错误信息**：当本地 API 服务未运行时，`request_netease_json_response` 现在先检查 Node.js 是否安装、API 包是否存在，返回精确的中文错误提示，而非笼统的"无法连接"。
+            ### 播放体验
+            - **随机播放改为 Fisher-Yates 洗牌队列**：整轮不重复，播完重新洗牌，解决原 `Math.random()` 真随机约 17 次后重复率超 50% 的「伪随机、容易重复」体感。
+            - **「上一首」加入播放历史栈**：shuffle 下也能回到实际播放过的曲目，而非再次随机抽取。
+            - **单曲列表「列表循环」可正常循环**：修复只有 1 首歌时列表循环停止的问题。
+            - **单曲循环不再阻塞电台/临时歌单队列**：先消耗排队曲目，仅队列空时才单曲循环。
+            - **歌单同步后当前曲目丢失导致控制条消失**：校验当前曲目是否在新列表中，不在则回退到首曲，并重置洗牌队列。
+            - **URL 过期后播放中断无法恢复**：签名 URL / 代理 token 过期后自动重新解析，无需手动切歌再切回。
 
-            ### 其他
-            - 后台同时获取网易云与 Bilibili 登录状态，设置面板关闭后同步刷新两者状态。
+            ### UI 与设置
+            - **修复底部空白与窗口可上下拖拽**：恢复 `h-screen overflow-hidden`，消除 v0.3 重构引入的滚动容器回归。
+            - **删除死代码与冗余按钮**：移除从未被调用的 `PlaylistAnalysisPanel` 与重复的「检查状态」按钮（已有自动轮询）。
+            - **搜索加载文案明确化**：从诗意的 "Listening outside the room" 改为 "Searching NetEase Cloud Music…"，新用户易理解。
+
+            ### 工程化
+            - **CI 流水线**：Rust（`cargo check` / `clippy -D warnings` / `fmt --check`）+ TypeScript（`tsc --noEmit` / ESLint / Prettier）双套检查全量通过。
+            - **云端同步核查**：新增 `verify-cloud-sync` job，三重核查（SHA 比对 + GitHub API + 关键文件落地）确保提交真正推送至云端，杜绝「本地显示已推送、远端实际缺失」的静默失败。
+            - **Docker 镜像**：`ome-netease-api`（网易云 API 服务）与 `ome-build-env`（Tauri Linux 构建环境）跟随版本 tag 推送到 GHCR。
+            - **贡献者**：欢迎 [@chinokoyuki](https://github.com/chinokoyuki) 加入，贡献 CI/CD 流水线（[PR #2](https://github.com/zerolyx/ome-music/pull/2)）。
 
             ---
 
