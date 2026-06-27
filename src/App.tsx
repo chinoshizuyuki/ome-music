@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LyricsSourceMenu } from "./components/LyricsSourceMenu";
 import { NowPlayingHero } from "./components/NowPlayingHero";
+import { OnboardingOverlay, isOnboardingCompleted, resetOnboarding } from "./components/OnboardingOverlay";
 import { OmeRadioPanel } from "./components/OmeRadioPanel";
 import { PlayerControls } from "./components/PlayerControls";
 import { TopSearch } from "./components/TopSearch";
@@ -17,9 +18,11 @@ import { getCurrentLyricIndex, importLyricsFile, parseLrc, resolveLyrics, saveLy
 import {
   ensureNeteaseApiService,
   openExternalUrl,
+  BilibiliAccountSessionProvider,
   BilibiliMusicProvider,
   NetEaseAccountSessionProvider,
   NetEaseMusicProvider,
+  type BilibiliLoginStatus,
   type DanmakuItem,
   type BilibiliDanmakuDebug,
   type NetEaseLoginStatus,
@@ -47,6 +50,7 @@ import type { LoopMode, Track } from "./types/music";
 const neteaseProvider = new NetEaseMusicProvider();
 const neteaseAuthProvider = new NetEaseAccountSessionProvider();
 const bilibiliProvider = new BilibiliMusicProvider();
+const bilibiliAuthProvider = new BilibiliAccountSessionProvider();
 const ProviderSettingsPanel = lazy(() => import("./components/ProviderSettingsPanel").then((module) => ({ default: module.ProviderSettingsPanel })));
 const DjCuratorPanel = lazy(() => import("./components/DjCuratorPanel").then((module) => ({ default: module.DjCuratorPanel })));
 const GlobalDanmakuAtmosphereLayer = lazy(() => import("./components/GlobalDanmakuAtmosphereLayer").then((module) => ({ default: module.GlobalDanmakuAtmosphereLayer })));
@@ -144,12 +148,14 @@ export default function App() {
   const [playbackDebug, setPlaybackDebug] = useState<NetEasePlaybackDebug | null>(null);
   const [sourceServiceStatus, setSourceServiceStatus] = useState<NetEaseServiceStatus | null>(null);
   const [sourceLoginStatus, setSourceLoginStatus] = useState<NetEaseLoginStatus | null>(null);
+  const [bilibiliLoginStatus, setBilibiliLoginStatus] = useState<BilibiliLoginStatus | null>(null);
   const [tasteNotes, setTasteNotes] = useState<TasteNotes | null>(null);
   const [danmakuItems, setDanmakuItems] = useState<DanmakuItem[]>([]);
   const [danmakuDebug, setDanmakuDebug] = useState<BilibiliDanmakuDebug | null>(null);
   const [essentialRestoreDone, setEssentialRestoreDone] = useState(false);
   const [envPromptDismissed, setEnvPromptDismissed] = useState<boolean>(() => window.localStorage.getItem("ome.env.prompt.dismissed") === "1");
   const [envPromptRechecking, setEnvPromptRechecking] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => !isOnboardingCompleted());
   const [showDjPanel, setShowDjPanel] = useState(false);
   const [radioSession, setRadioSession] = useState<RadioSession | null>(null);
   const radioSessionRef = useRef<RadioSession | null>(null);
@@ -285,6 +291,14 @@ export default function App() {
           })
           .catch(() => {
             if (!cancelled) setSourceLoginStatus(null);
+          }),
+        bilibiliAuthProvider
+          .getLoginStatus()
+          .then((login) => {
+            if (!cancelled) setBilibiliLoginStatus(login);
+          })
+          .catch(() => {
+            if (!cancelled) setBilibiliLoginStatus(null);
           }),
         neteaseProvider
           .getLatestTasteNotes()
@@ -1079,13 +1093,34 @@ export default function App() {
         />
       )}
 
-      {sourceServiceStatus && !sourceServiceStatus.nodeAvailable && !envPromptDismissed && (
+      {sourceServiceStatus && !sourceServiceStatus.nodeAvailable && !envPromptDismissed && !showOnboarding && (
         <EnvironmentPrompt
           status={sourceServiceStatus}
           rechecking={envPromptRechecking}
           onInstall={() => void openExternalUrl("https://nodejs.org")}
           onRecheck={recheckNeteaseEnvironment}
           onDismiss={dismissEnvPrompt}
+        />
+      )}
+
+      {showOnboarding && (
+        <OnboardingOverlay
+          serviceStatus={sourceServiceStatus}
+          localTrackCount={tracks.filter((track) => track.source === "local").length}
+          neteaseLoggedIn={Boolean(sourceLoginStatus?.loggedIn)}
+          bilibiliLoggedIn={Boolean(bilibiliLoginStatus?.loggedIn)}
+          onClose={() => setShowOnboarding(false)}
+          onImportMusic={importFolder}
+          onOpenNeteaseSettings={() => {
+            setShowOnboarding(false);
+            setSettingsFocus("music");
+            setProviderSettingsOpen(true);
+          }}
+          onOpenBilibiliSettings={() => {
+            setShowOnboarding(false);
+            setSettingsFocus("music");
+            setProviderSettingsOpen(true);
+          }}
         />
       )}
 
@@ -1176,11 +1211,16 @@ export default function App() {
             onClose={() => {
               setProviderSettingsOpen(false);
               void neteaseAuthProvider.getLoginStatus().then(setSourceLoginStatus).catch(() => setSourceLoginStatus(null));
+              void bilibiliAuthProvider.getLoginStatus().then(setBilibiliLoginStatus).catch(() => setBilibiliLoginStatus(null));
             }}
             onLibraryChanged={(updatedTracks) => {
               setTracks(updatedTracks);
               setCurrentTrackId((value) => value ?? updatedTracks[0]?.id ?? null);
               void neteaseProvider.getLatestTasteNotes().then(setTasteNotes).catch(() => setTasteNotes(null));
+            }}
+            onRestartOnboarding={() => {
+              resetOnboarding();
+              setShowOnboarding(true);
             }}
           />
         </Suspense>

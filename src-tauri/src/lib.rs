@@ -30,6 +30,7 @@ const NETEASE_KEYRING_ACCOUNT: &str = "local";
 const BILIBILI_KEYRING_SERVICE: &str = "ome.music.source.bilibili";
 const BILIBILI_KEYRING_ACCOUNT: &str = "local";
 const BILIBILI_DEFAULT_BASE_URL: &str = "https://api.bilibili.com";
+const BILIBILI_BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 pub struct AppState {
     db: Mutex<Connection>,
@@ -1018,12 +1019,14 @@ async fn import_bilibili_cookie(
 async fn create_bilibili_qr_login() -> Result<NeteaseQrLoginDto, String> {
     let response = reqwest::Client::new()
         .get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate")
-        .header("User-Agent", "Mozilla/5.0 OmeMusic")
+        .header("User-Agent", BILIBILI_BROWSER_USER_AGENT)
         .header("Referer", "https://www.bilibili.com/")
+        .header("Origin", "https://www.bilibili.com")
+        .header("Accept", "application/json, text/plain, */*")
         .timeout(std::time::Duration::from_secs(12))
         .send()
         .await
-        .map_err(|_| "Could not create a Bilibili sign-in code.".to_string())?;
+        .map_err(|error| format!("Could not create a Bilibili sign-in code. {error}"))?;
     let value = response
         .json::<serde_json::Value>()
         .await
@@ -1048,12 +1051,14 @@ async fn check_bilibili_qr_login(
     let response = reqwest::Client::new()
         .get("https://passport.bilibili.com/x/passport-login/web/qrcode/poll")
         .query(&[("qrcode_key", payload.key.as_str())])
-        .header("User-Agent", "Mozilla/5.0 OmeMusic")
+        .header("User-Agent", BILIBILI_BROWSER_USER_AGENT)
         .header("Referer", "https://www.bilibili.com/")
+        .header("Origin", "https://www.bilibili.com")
+        .header("Accept", "application/json, text/plain, */*")
         .timeout(std::time::Duration::from_secs(12))
         .send()
         .await
-        .map_err(|_| "Could not check the Bilibili sign-in code.".to_string())?;
+        .map_err(|error| format!("Could not check the Bilibili sign-in code. {error}"))?;
 
     let set_cookie = cookie_header_from_response(&response);
     let value = response
@@ -1262,22 +1267,24 @@ async fn create_netease_qr_login(state: State<'_, AppState>) -> Result<NeteaseQr
         "/login/qr/key",
         &[("timestamp", timestamp.as_str())],
     )
-    .await?;
+    .await
+    .map_err(|error| format!("无法连接网易云 API 服务。 / Could not reach the NetEase API. {error}"))?;
     let key = key_value
         .get("data")
         .and_then(|data| data.get("unikey"))
         .and_then(|value| value.as_str())
-        .ok_or_else(|| "Could not create a login code.".to_string())?
+        .ok_or_else(|| "网易云 API 未返回登录密钥，请稍后重试。 / The NetEase API did not return a login key.".to_string())?
         .to_string();
     let create_value = request_netease_json(
         &config,
         "/login/qr/create",
         &[("key", key.as_str()), ("qrimg", "true"), ("timestamp", timestamp.as_str())],
     )
-    .await?;
+    .await
+    .map_err(|error| format!("无法生成二维码。 / Could not generate the QR code. {error}"))?;
     let data = create_value
         .get("data")
-        .ok_or_else(|| "Could not create a login code.".to_string())?;
+        .ok_or_else(|| "网易云 API 未返回二维码数据。 / The NetEase API did not return QR data.".to_string())?;
 
     Ok(NeteaseQrLoginDto {
         key,
@@ -1304,7 +1311,7 @@ async fn check_netease_qr_login(
     let response = request_netease_json_response(
         &config,
         "/login/qr/check",
-        &[("key", payload.key.as_str()), ("timestamp", timestamp.as_str()), ("noCookie", "true")],
+        &[("key", payload.key.as_str()), ("timestamp", timestamp.as_str())],
     )
     .await?;
     let value = response.value;
@@ -1321,14 +1328,16 @@ async fn check_netease_qr_login(
     .to_string();
 
     let login_status = if code == 803 {
-        if let Some(cookie) = value
+        let cookie = value
             .get("cookie")
             .and_then(|cookie| cookie.as_str())
             .or(response.set_cookie.as_deref())
             .map(str::trim)
-            .filter(|cookie| !cookie.is_empty())
-        {
+            .filter(|cookie| !cookie.is_empty());
+        if let Some(cookie) = cookie {
             save_netease_token(cookie)?;
+        } else {
+            return Err("扫码登录成功但未能获取会话凭证，请重试。 / Sign-in confirmed but the session cookie was missing.".to_string());
         }
         let refreshed_config = resolve_netease_source_config(&state, None)?;
         Some(fetch_netease_login_status(&refreshed_config).await?)
@@ -4659,7 +4668,16 @@ async fn request_netease_json_response(
     }
 
     if is_local_netease_base_url(&config.base_url) {
-        let _ = ensure_local_netease_api_service(&config.base_url).await;
+        let status = ensure_local_netease_api_service(&config.base_url).await?;
+        if !status.running {
+            if !status.node_available {
+                return Err("系统未安装 Node.js，网易云 API 服务无法启动。请安装 Node.js v20+ 后重试。 / Node.js is not installed. Install Node.js v20+ to use NetEase Cloud Music.".to_string());
+            }
+            if !status.api_package_found {
+                return Err("网易云 API 服务包未找到。如果这是安装版，请确认运行时文件完整。 / The NetEase API package was not found. If this is an installed build, the runtime files may be missing.".to_string());
+            }
+            return Err(format!("网易云 API 服务仍在启动中，请稍后重试。 / {} ", status.message));
+        }
     }
 
     let endpoint = format!("{}{}", config.base_url.trim_end_matches('/'), path);
@@ -4685,7 +4703,7 @@ async fn request_netease_json_response(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("Could not reach NetEase Cloud Music. {error}"))?;
+        .map_err(|error| format!("无法连接网易云 API 服务 ({endpoint})。 / Could not reach the NetEase API. {error}"))?;
     let status = response.status();
     let set_cookie = response
         .headers()

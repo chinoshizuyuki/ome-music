@@ -18,6 +18,7 @@ import {
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Volume2,
   X,
@@ -86,6 +87,7 @@ interface ProviderSettingsPanelProps {
   onPlaybackQualityChange: (level: NonNullable<PlayableUrlOptions["level"]>) => void;
   onClose: () => void;
   onLibraryChanged?: (tracks: Track[]) => void;
+  onRestartOnboarding?: () => void;
 }
 
 type SettingsSection = "overview" | "sources" | "curator" | "playback" | "atmosphere" | "storage" | "advanced" | "guide";
@@ -131,7 +133,7 @@ const neteaseAuthProvider = new NetEaseAccountSessionProvider();
 const bilibiliProvider = new BilibiliMusicProvider();
 const bilibiliAuthProvider = new BilibiliAccountSessionProvider();
 
-export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, onPlaybackQualityChange, onClose, onLibraryChanged }: ProviderSettingsPanelProps) {
+export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, onPlaybackQualityChange, onClose, onLibraryChanged, onRestartOnboarding }: ProviderSettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     focus === "music" ? "sources" : focus === "atmosphere" ? "atmosphere" : "overview"
   );
@@ -1268,6 +1270,20 @@ export function ProviderSettingsPanel({ open, focus = "all", playbackQuality, on
                   <p className="text-sm font-semibold text-white/74">Music First.</p>
                   <p className="mt-2 text-xs leading-6 text-white/36">所有高级能力都在背后工作，不抢主视觉。当不确定时，让它保持安静。</p>
                 </div>
+                {onRestartOnboarding && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRestartOnboarding();
+                      onClose();
+                    }}
+                    className="app-transition flex w-full items-center gap-3 rounded-[16px] bg-white/[0.04] px-4 py-3 text-left text-white/52 hover:bg-white/[0.08] hover:text-white/82"
+                  >
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 text-xs font-bold">重新查看新手引导 / Replay onboarding</span>
+                    <ChevronDown className="h-3.5 w-3.5 -rotate-90 opacity-50" />
+                  </button>
+                )}
               </div>
             )}
 
