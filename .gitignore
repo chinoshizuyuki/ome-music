@@ -1,0 +1,81 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite / frontend build
+dist/
+build/
+.vite/
+
+# Rust / Tauri
+src-tauri/target/
+target/
+**/target/
+
+# Tauri bundles
+src-tauri/target/release/bundle/
+
+# Logs
+logs/
+*.log
+startup-*.json
+startup-*.log
+
+# Cache
+cache/
+.cache/
+tmp/
+temp/
+*.tmp
+.playwright-cli/
+_codex_backups/
+
+# App artifacts
+artifacts/
+release/
+*.msi
+*.exe
+*.dmg
+*.app
+*.deb
+*.rpm
+*.AppImage
+
+# User data / local runtime data
+*.sqlite3
+*.db
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+PersonalConfig/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+
+# Local verification artifacts
+/playwright-*.png
+/startup-*.json
+/startup-*.log
+
+# Personal local launch helpers
+/*.bat
+/个人使用说明.md
+/*使用说明*.md
+/*配置*.md
+/个人使用说明.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
