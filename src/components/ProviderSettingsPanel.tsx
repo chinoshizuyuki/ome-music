@@ -89,7 +89,14 @@ interface ProviderSettingsPanelProps {
 }
 
 type SettingsSection =
-  "overview" | "sources" | "curator" | "playback" | "atmosphere" | "storage" | "advanced" | "guide";
+  | "overview"
+  | "sources"
+  | "curator"
+  | "playback"
+  | "atmosphere"
+  | "storage"
+  | "advanced"
+  | "guide";
 
 const settingsSections: Array<{
   id: SettingsSection;
@@ -259,6 +266,7 @@ export function ProviderSettingsPanel({
     setNeteaseVipStatus(null);
     setNeteasePassword("");
     setNeteaseSmsCode("");
+    setSmsCooldown(0);
     setTasteNotes(null);
     void listSpeechVoices().then(setVoices);
     void neteaseProvider
@@ -316,6 +324,7 @@ export function ProviderSettingsPanel({
 
     let cancelled = false;
     let inFlight = false;
+    let errorCount = 0;
     const poll = async () => {
       if (inFlight || cancelled) return;
       inFlight = true;
@@ -331,6 +340,7 @@ export function ProviderSettingsPanel({
 
         const result = await neteaseAuthProvider.checkQrLoginStatus(neteaseQr.key);
         if (cancelled) return;
+        errorCount = 0;
 
         // 同步本地状态机：confirmed（已扫描待确认）映射为 scanned，其余维持。
         if (result.status === "confirmed") {
@@ -338,8 +348,11 @@ export function ProviderSettingsPanel({
         } else if (result.status === "waiting") {
           setNeteaseQrStatus("waiting");
         }
+        // unknown 状态保持当前 UI 状态不变，不覆盖 sourceMessage
 
-        setSourceMessage(qrStatusMessage(result.status));
+        if (result.status !== "unknown") {
+          setSourceMessage(qrStatusMessage(result.status));
+        }
         if (result.loginStatus) {
           setNeteaseLoginStatus(result.loginStatus);
           const [vip, savedMusicSourceConfig] = await Promise.all([
@@ -361,7 +374,15 @@ export function ProviderSettingsPanel({
           setNeteaseQrStatus("expired");
         }
       } catch (error) {
-        if (!cancelled) setSourceMessage(`Could not check the sign-in code. ${readError(error)}`);
+        if (!cancelled) {
+          errorCount += 1;
+          if (errorCount >= 5) {
+            setNeteaseQrStatus("timeout");
+            setSourceMessage("网络异常，请重新生成二维码 / Network error, regenerate the QR code.");
+          } else {
+            setSourceMessage(`Could not check the sign-in code. ${readError(error)}`);
+          }
+        }
       } finally {
         inFlight = false;
       }
@@ -382,6 +403,7 @@ export function ProviderSettingsPanel({
 
     let cancelled = false;
     let inFlight = false;
+    let errorCount = 0;
     const poll = async () => {
       if (cancelled || inFlight) return;
       inFlight = true;
@@ -396,14 +418,18 @@ export function ProviderSettingsPanel({
 
         const result = await bilibiliAuthProvider.checkQrLoginStatus(bilibiliQr.key);
         if (cancelled) return;
+        errorCount = 0;
 
         if (result.status === "confirmed") {
           setBilibiliQrStatus("scanned");
         } else if (result.status === "waiting") {
           setBilibiliQrStatus("waiting");
         }
+        // unknown 状态保持当前 UI 状态不变，不覆盖 sourceMessage
 
-        setSourceMessage(qrStatusMessage(result.status));
+        if (result.status !== "unknown") {
+          setSourceMessage(qrStatusMessage(result.status));
+        }
         if (result.loginStatus) {
           const savedConfig = await getBilibiliSourceConfig();
           if (cancelled) return;
@@ -421,7 +447,15 @@ export function ProviderSettingsPanel({
           setBilibiliQrStatus("expired");
         }
       } catch (error) {
-        if (!cancelled) setSourceMessage(`无法检查 Bilibili 登录状态 / ${readError(error)}`);
+        if (!cancelled) {
+          errorCount += 1;
+          if (errorCount >= 5) {
+            setBilibiliQrStatus("timeout");
+            setSourceMessage("网络异常，请重新生成二维码 / Network error, regenerate the QR code.");
+          } else {
+            setSourceMessage(`无法检查 Bilibili 登录状态 / ${readError(error)}`);
+          }
+        }
       } finally {
         inFlight = false;
       }
@@ -1602,7 +1636,7 @@ export function ProviderSettingsPanel({
                             />
                           ) : (
                             <div className="flex h-32 w-32 items-center justify-center rounded-[16px] bg-white/[0.06] text-xs text-white/40">
-                              QR ready
+                              二维码加载失败 / QR unavailable
                             </div>
                           )}
                           <div className="flex flex-col justify-center">
@@ -2214,7 +2248,7 @@ function BilibiliSourceSettings({
               />
             ) : (
               <div className="flex h-32 w-32 items-center justify-center rounded-[14px] bg-white/[0.06] text-xs text-white/40">
-                QR ready
+                二维码加载失败 / QR unavailable
               </div>
             )}
             <div className="flex flex-col justify-center">
@@ -2986,6 +3020,8 @@ function qrStatusMessage(status: string): string {
       return "登录成功 / Connected";
     case "expired":
       return "二维码已过期 / QR code expired. Refresh to try again.";
+    case "unknown":
+      return "状态未知，正在重试 / Status unknown, retrying…";
     default:
       return "Could not confirm the sign-in status.";
   }

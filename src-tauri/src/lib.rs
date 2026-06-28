@@ -1421,7 +1421,7 @@ async fn login_netease_with_password(
     payload: NeteasePasswordLoginPayload,
 ) -> Result<NeteaseLoginStatusDto, String> {
     let config = resolve_netease_source_config(&state, None)?;
-    let account = payload.account.trim();
+    let account = payload.account.trim().replace(' ', "");
     let password = payload.password.trim();
     if account.is_empty() || password.is_empty() {
         return Err("Account and password are required.".to_string());
@@ -1438,11 +1438,16 @@ async fn login_netease_with_password(
         .chars()
         .all(|character| character.is_ascii_digit() || character == '+');
 
+    let md5_password = format!("{:x}", md5::compute(password.as_bytes()));
+
     let response = if login_type == "email" || (!looks_like_phone && account.contains('@')) {
         request_netease_json_response(
             &config,
             "/login",
-            &[("email", account), ("password", password)],
+            &[
+                ("email", account.as_str()),
+                ("md5_password", md5_password.as_str()),
+            ],
         )
         .await?
     } else {
@@ -1450,9 +1455,9 @@ async fn login_netease_with_password(
             &config,
             "/login/cellphone",
             &[
-                ("phone", account.trim_start_matches('+')),
+                ("phone", account.as_str().trim_start_matches('+')),
                 ("countrycode", country_code.trim_start_matches('+')),
-                ("password", password),
+                ("md5_password", md5_password.as_str()),
             ],
         )
         .await?
@@ -1467,7 +1472,7 @@ async fn request_netease_sms_code(
     payload: NeteaseSmsPayload,
 ) -> Result<SourceConnectionDto, String> {
     let config = resolve_netease_source_config(&state, None)?;
-    let phone = payload.phone.trim();
+    let phone = payload.phone.trim().replace(' ', "");
     if phone.is_empty() {
         return Err("Phone number is required.".to_string());
     }
@@ -1481,7 +1486,7 @@ async fn request_netease_sms_code(
         &config,
         "/captcha/sent",
         &[
-            ("phone", phone),
+            ("phone", phone.as_str()),
             ("ctcode", country_code.trim_start_matches('+')),
         ],
     )
@@ -1506,7 +1511,7 @@ async fn login_netease_with_sms_code(
     payload: NeteaseSmsLoginPayload,
 ) -> Result<NeteaseLoginStatusDto, String> {
     let config = resolve_netease_source_config(&state, None)?;
-    let phone = payload.phone.trim();
+    let phone = payload.phone.trim().replace(' ', "");
     let code = payload.code.trim();
     if phone.is_empty() || code.is_empty() {
         return Err("Phone number and verification code are required.".to_string());
@@ -1521,10 +1526,9 @@ async fn login_netease_with_sms_code(
         &config,
         "/login/cellphone",
         &[
-            ("phone", phone),
+            ("phone", phone.as_str()),
             ("countrycode", country_code.trim_start_matches('+')),
             ("captcha", code),
-            ("noCookie", "true"),
         ],
     )
     .await?;
@@ -5232,7 +5236,20 @@ async fn request_netease_json_response(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("无法连接网易云 API 服务 ({endpoint_for_error})。 / Could not reach the NetEase API. {error}"))?;
+        .map_err(|error| {
+            // reqwest 错误的 Display 可能包含完整 URL（含 cookie/password 等 query 参数），
+            // 不能直接透传，只报告连接类型和端点路径。
+            let error_kind = if error.is_connect() {
+                "connection refused"
+            } else if error.is_timeout() {
+                "timeout"
+            } else {
+                "network error"
+            };
+            format!(
+                "无法连接网易云 API 服务 ({endpoint_for_error})。 / Could not reach the NetEase API. {error_kind}"
+            )
+        })?;
     let status = response.status();
     let set_cookie = cookie_header_from_response(&response);
     let text = response.text().await.map_err(|error| error.to_string())?;
@@ -5257,7 +5274,7 @@ async fn complete_netease_session_from_response(
     let code = value
         .get("code")
         .and_then(|value| value.as_i64())
-        .unwrap_or(200);
+        .unwrap_or(0);
     if code != 200 && code != 803 {
         return Err(friendly_netease_login_error(&value));
     }
@@ -5269,7 +5286,7 @@ async fn complete_netease_session_from_response(
         .map(str::trim)
         .filter(|cookie| !cookie.is_empty())
         .ok_or_else(|| {
-            "Additional verification is required. Try scan login or secure web login.".to_string()
+            "登录成功但未能获取会话凭证，请尝试扫码登录。 / Sign-in succeeded but no session credential was returned. Try scan login.".to_string()
         })?;
     save_netease_token(cookie)?;
 
@@ -5355,15 +5372,7 @@ async fn fetch_netease_playlist(
     let mut tracks = Vec::new();
 
     for item in tracks_json.iter().take(500) {
-        let mut song = source_song_from_playlist_json(item);
-        if let Ok(playable) = fetch_netease_playable_url(config, &song.id).await {
-            song.unavailable = playable.unavailable;
-            song.unavailable_reason = playable.reason;
-            song.playable_url = playable.url;
-        } else {
-            song.unavailable = true;
-            song.unavailable_reason = Some("api_failed".to_string());
-        }
+        let song = source_song_from_playlist_json(item);
         tracks.push(song);
     }
 
@@ -5599,17 +5608,20 @@ async fn fetch_netease_playable_url_with_level(
         final_debug.message = message;
 
         if let Some(url) = url {
-            final_debug.attempts = attempts;
-            return Ok(PlayableUrlDto {
-                song_id: song_id.to_string(),
-                unavailable: false,
-                reason: None,
-                url: Some(url),
-                video_url: None,
-                debug: Some(final_debug),
-                audio_candidates: Vec::new(),
-                video_candidates: Vec::new(),
-            });
+            if !trial_only {
+                final_debug.attempts = attempts;
+                return Ok(PlayableUrlDto {
+                    song_id: song_id.to_string(),
+                    unavailable: false,
+                    reason: None,
+                    url: Some(url),
+                    video_url: None,
+                    debug: Some(final_debug),
+                    audio_candidates: Vec::new(),
+                    video_candidates: Vec::new(),
+                });
+            }
+            // 试听片段不返回，继续尝试更低音质 level
         }
     }
 
@@ -5861,7 +5873,7 @@ async fn fetch_netease_vip_status(
             })
         }
         Err(_) => Ok(NeteaseVipStatusDto {
-            is_member: has_token,
+            is_member: false,
             level: None,
             message: "Membership status is unavailable right now.".to_string(),
         }),
