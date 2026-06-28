@@ -1444,7 +1444,6 @@ async fn login_netease_with_password(
             &[
                 ("email", account),
                 ("password", password),
-                ("noCookie", "true"),
             ],
         )
         .await?
@@ -1456,7 +1455,6 @@ async fn login_netease_with_password(
                 ("phone", account.trim_start_matches('+')),
                 ("countrycode", country_code.trim_start_matches('+')),
                 ("password", password),
-                ("noCookie", "true"),
             ],
         )
         .await?
@@ -5203,9 +5201,11 @@ async fn request_netease_json_response(
     // 预检失败不再吞错：把真实原因（Node.js 未装 / NeteaseCloudMusicApi 未找到 / 端口被占等）透出，
     // 避免后续 request.send() 失败时给出笼统的 "Could not reach" 掩盖真实环境问题。
     if is_local_netease_base_url(&config.base_url) {
-        if let Err(reason) = ensure_local_netease_api_service(&config.base_url).await {
+        let service_status = ensure_local_netease_api_service(&config.base_url).await?;
+        if !service_status.running {
             return Err(format!(
-                "NetEase 本地服务启动失败 / Could not start local NetEase API. {reason}"
+                "NetEase API 服务未就绪 / NetEase API is not ready. {}",
+                service_status.message
             ));
         }
     }
