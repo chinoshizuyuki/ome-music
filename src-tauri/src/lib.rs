@@ -1293,11 +1293,11 @@ async fn ensure_netease_api_service(
 #[tauri::command]
 async fn create_netease_qr_login(state: State<'_, AppState>) -> Result<NeteaseQrLoginDto, String> {
     let config = resolve_netease_source_config(&state, None)?;
-    let timestamp = current_timestamp_ms().to_string();
+    let key_timestamp = current_timestamp_ms().to_string();
     let key_value = request_netease_json(
         &config,
         "/login/qr/key",
-        &[("timestamp", timestamp.as_str())],
+        &[("timestamp", key_timestamp.as_str())],
     )
     .await
     .map_err(|error| {
@@ -1312,13 +1312,14 @@ async fn create_netease_qr_login(state: State<'_, AppState>) -> Result<NeteaseQr
                 .to_string()
         })?
         .to_string();
+    let create_timestamp = current_timestamp_ms().to_string();
     let create_value = request_netease_json(
         &config,
         "/login/qr/create",
         &[
             ("key", key.as_str()),
             ("qrimg", "true"),
-            ("timestamp", timestamp.as_str()),
+            ("timestamp", create_timestamp.as_str()),
         ],
     )
     .await
@@ -1441,10 +1442,7 @@ async fn login_netease_with_password(
         request_netease_json_response(
             &config,
             "/login",
-            &[
-                ("email", account),
-                ("password", password),
-            ],
+            &[("email", account), ("password", password)],
         )
         .await?
     } else {
@@ -5236,19 +5234,7 @@ async fn request_netease_json_response(
         .await
         .map_err(|error| format!("无法连接网易云 API 服务 ({endpoint_for_error})。 / Could not reach the NetEase API. {error}"))?;
     let status = response.status();
-    let set_cookie = response
-        .headers()
-        .get_all(reqwest::header::SET_COOKIE)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("; ");
-    let set_cookie = if set_cookie.trim().is_empty() {
-        None
-    } else {
-        Some(set_cookie)
-    };
+    let set_cookie = cookie_header_from_response(&response);
     let text = response.text().await.map_err(|error| error.to_string())?;
     let value = serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|_| format!("NetEase Cloud Music responded with {status}."))?;
