@@ -10,13 +10,7 @@ import type {
 } from "../../types/music";
 
 export type PlaybackEventType =
-  | "play"
-  | "pause"
-  | "skip"
-  | "completed"
-  | "liked"
-  | "unliked"
-  | "replayed";
+  "play" | "pause" | "skip" | "completed" | "liked" | "unliked" | "replayed";
 
 export interface ImportResult {
   directory: string | null;

@@ -89,14 +89,7 @@ interface ProviderSettingsPanelProps {
 }
 
 type SettingsSection =
-  | "overview"
-  | "sources"
-  | "curator"
-  | "playback"
-  | "atmosphere"
-  | "storage"
-  | "advanced"
-  | "guide";
+  "overview" | "sources" | "curator" | "playback" | "atmosphere" | "storage" | "advanced" | "guide";
 
 const settingsSections: Array<{
   id: SettingsSection;
