@@ -125,7 +125,7 @@ export function DanmakuAtmosphereLayer({
       return {
         key: item.id,
         text: item.text,
-        top: Math.max(8, Math.min(84, topBase + index * 5)),
+        top: Math.max(8, Math.min(78, topBase + index * 5)),
         duration: duration + (seed % 4),
         delay: (seed % 40) / 100,
         direction,
@@ -230,7 +230,7 @@ function resolveMotionStyle(
   seed: number,
 ): Exclude<DanmakuMotionStyle, "mixed"> {
   if (style !== "mixed") return style;
-  return (["classic", "drift", "float", "pulse", "meteor"] as const)[seed % 5];
+  return (["arc", "classic", "drift", "float", "pulse", "meteor"] as const)[seed % 6];
 }
 
 function motionAnimationName(
@@ -247,14 +247,15 @@ function motionDurationFactor(motion: Exclude<DanmakuMotionStyle, "mixed">): num
   if (motion === "float") return 1.25;
   if (motion === "pulse") return 0.72;
   if (motion === "drift") return 1.12;
+  if (motion === "arc") return 1.18;
   return 1;
 }
 
 function fontSizeValue(size: DanmakuSettings["fontSize"]): string {
-  // Readable default danmaku sizes (Small 16px / Medium 20px / Large 26px).
-  // The previous defaults (≈12/14/16px) were too small to read, especially at full
-  // screen. Medium is the default and must be comfortably legible.
-  return size === "small" ? "1rem" : size === "large" ? "1.625rem" : "1.3rem";
+  // Bumped one tier up so danmaku reads as atmosphere, not fine print.
+  // Small ≈20.8px / Medium ≈26px / Large 32px. Medium is the default and
+  // must be comfortably legible at full screen.
+  return size === "small" ? "1.3rem" : size === "large" ? "2rem" : "1.625rem";
 }
 
 function intensityOpacity(intensity: DanmakuSettings["emotionalIntensity"]): number {

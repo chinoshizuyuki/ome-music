@@ -487,18 +487,29 @@ function LyricsRoom({
           const isNearby = distance >= 1 && distance <= 2;
 
           const opacity = isCurrent
-            ? 0.96
+            ? 0.98
             : isNearby
-              ? 0.42
-              : Math.max(0.14, 0.3 - distance * 0.02);
-          const blur = isCurrent ? 0 : isNearby ? 3 : 7;
-          const scale = isCurrent ? 1 : isNearby ? 0.9 : 0.8;
-          // Radiating drift: lines fan outward from center, capped so far
-          // lines don't leave the stage. Direction follows sign(offset).
+              ? 0.4
+              : Math.max(0.1, 0.28 - distance * 0.025);
+          const blur = isCurrent ? 0 : isNearby ? 3 : 8;
+          const scale = isCurrent ? 1 : isNearby ? 0.88 : 0.76;
+          // Direction follows sign(offset): above lines fan up-and-back,
+          // below lines fan down-and-back, so the current line is the focal
+          // point of a soft curve wrapping around the listener.
           const dir = Math.sign(offset);
+          // Horizontal fan (kept from the previous radial drift, capped).
           const xShift = isCurrent ? 0 : dir * Math.min(distance, 4) * 6;
-          // Gentle rotate — the "echo in air" cue. Capped to stay calm.
-          const rotate = isCurrent ? 0 : dir * Math.min(distance, 3) * 0.5;
+          // Vertical curve: lines drift away from the current line along Y,
+          // which together with the X fan reads as a curved/arc stage rather
+          // than a flat list. Capped so far lines stay on-screen.
+          const yShift = isCurrent ? 0 : dir * Math.min(distance, 4) * 7;
+          // True depth into the screen — the stage has preserve-3d, so this
+          // composes with the container's perspective(1200px) rotateY(-3deg)
+          // to make nearby lines feel close and far lines recede.
+          const zShift = isCurrent ? 0 : isNearby ? -38 : -86;
+          // Gentle rotate following the curve tangent, slightly stronger so
+          // the arc reads. Capped to stay calm.
+          const rotate = isCurrent ? 0 : dir * Math.min(distance, 3) * 0.7;
 
           return (
             <button
@@ -507,7 +518,7 @@ function LyricsRoom({
               data-lyric-index={index}
               onClick={() => onSeekToLyric(line.startTime)}
               style={{
-                transform: `translateX(${xShift}px) scale(${scale}) rotate(${rotate}deg)`,
+                transform: `translate3d(${xShift}px, ${yShift}px, ${zShift}px) scale(${scale}) rotate(${rotate}deg)`,
                 opacity,
                 filter: blur > 0 ? `blur(${blur}px)` : undefined,
               }}

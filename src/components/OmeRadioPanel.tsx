@@ -36,8 +36,8 @@ export function OmeRadioPanel({
     <aside
       data-danmaku-safe-zone="radio"
       className={clsx(
-        "fixed left-5 top-1/2 z-30 w-[min(310px,calc(100vw-56px))] -translate-y-1/2 transition duration-[520ms] ease-out",
-        isOpen ? "translate-x-0 opacity-100" : "-translate-x-[calc(100%-48px)] opacity-72",
+        "fixed left-5 top-1/2 z-30 w-[min(310px,calc(100vw-56px))] -translate-y-1/2 transition duration-[520ms] ease-out hover:opacity-100",
+        isOpen ? "translate-x-0 opacity-100" : "-translate-x-[calc(100%-48px)] opacity-45",
       )}
     >
       <div className="overflow-hidden rounded-[30px] border border-[#4a2108]/[0.035] bg-[#eadbcd]/[0.18] shadow-[0_22px_70px_rgba(74,33,8,0.10)] backdrop-blur-3xl">

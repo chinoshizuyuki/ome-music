@@ -3,7 +3,14 @@ export type DanmakuSpeed = "slow" | "normal" | "fast";
 export type DanmakuDirection = "rtl" | "ltr" | "mixed";
 export type DanmakuDisplayMode = "off" | "video" | "ambient";
 export type DanmakuFontSize = "small" | "medium" | "large";
-export type DanmakuMotionStyle = "classic" | "drift" | "meteor" | "float" | "pulse" | "mixed";
+export type DanmakuMotionStyle =
+  | "classic"
+  | "drift"
+  | "meteor"
+  | "float"
+  | "pulse"
+  | "arc"
+  | "mixed";
 export type DanmakuEntranceStyle = "fade" | "slide" | "soft-rise" | "glow-drift";
 export type DanmakuEmotionalIntensity = "quiet" | "balanced" | "expressive";
 
@@ -78,7 +85,7 @@ function normalizeDanmakuSettings(settings: DanmakuSettings): DanmakuSettings {
     fontSize: ["small", "medium", "large"].includes(settings.fontSize)
       ? settings.fontSize
       : "medium",
-    motionStyle: ["classic", "drift", "meteor", "float", "pulse", "mixed"].includes(
+    motionStyle: ["classic", "drift", "meteor", "float", "pulse", "arc", "mixed"].includes(
       settings.motionStyle,
     )
       ? settings.motionStyle

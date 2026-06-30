@@ -96,8 +96,13 @@ export function PlayerControls({
       className="fixed inset-x-0 bottom-0 z-30 h-24 text-[#4a2108]"
     >
       <div className="absolute inset-x-10 bottom-8 grid grid-cols-[1fr_auto_1fr] items-center">
-        {/* Left cluster: playback mode + speed. Kept small and quiet — these
-            are secondary controls, the visual center is the play button. */}
+        {/* Left cluster: playback mode + (conditional) speed indicator.
+            Kept small and quiet — these are secondary controls, the visual
+            center is the play button. The speed chip is hidden while at the
+            default 1x (the explicit speed list lives in the hero's More menu,
+            so the bottom bar no longer parades it at rest); it reappears as a
+            quiet state indicator only when the user has chosen a non-default
+            speed, so they always see when the room is not running at 1x. */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -108,16 +113,18 @@ export function PlayerControls({
           >
             <modeMeta.Icon className="h-[17px] w-[17px]" />
           </button>
-          <button
-            type="button"
-            onClick={onCyclePlaybackSpeed}
-            className={`player-icon-button gap-1.5 px-2.5 ${playbackSpeed !== 1 ? "is-active" : ""}`}
-            aria-label={`Playback speed ${speedLabel}`}
-            title={`Playback speed ${speedLabel}`}
-          >
-            <Gauge className="h-[15px] w-[15px]" />
-            <span className="text-[11px] font-bold tabular-nums">{speedLabel}</span>
-          </button>
+          {playbackSpeed !== 1 && (
+            <button
+              type="button"
+              onClick={onCyclePlaybackSpeed}
+              className="player-icon-button is-active gap-1.5 px-2.5"
+              aria-label={`Playback speed ${speedLabel}`}
+              title={`Playback speed ${speedLabel}`}
+            >
+              <Gauge className="h-[15px] w-[15px]" />
+              <span className="text-[11px] font-bold tabular-nums">{speedLabel}</span>
+            </button>
+          )}
         </div>
 
         {/* Center cluster: transport controls (the visual anchor). */}

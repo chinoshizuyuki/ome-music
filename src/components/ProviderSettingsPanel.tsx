@@ -92,6 +92,12 @@ interface ProviderSettingsPanelProps {
   onClose: () => void;
   onLibraryChanged?: (tracks: Track[]) => void;
   onRestartOnboarding?: () => void;
+  // Live login-state propagation. The panel owns its own login refresh (QR,
+  // password, SMS, cookie import), but the rest of the app must NOT wait until
+  // the panel closes to see the new session state — otherwise playback / search
+  // gating / onboarding still treat the user as signed out right after a scan.
+  onNetEaseLoginChanged?: (status: NetEaseLoginStatus | null) => void;
+  onBilibiliLoginChanged?: (status: BilibiliLoginStatus | null) => void;
   // Last NetEase playback resolve diagnostics + last Bilibili danmaku fetch
   // diagnostics, surfaced in the Advanced section so failures are never silent.
   neteasePlaybackDebug?: NetEasePlaybackDebug | null;
@@ -340,6 +346,8 @@ export function ProviderSettingsPanel({
   onClose,
   onLibraryChanged,
   onRestartOnboarding,
+  onNetEaseLoginChanged,
+  onBilibiliLoginChanged,
   neteasePlaybackDebug = null,
   bilibiliDanmakuDebug = null,
 }: ProviderSettingsPanelProps) {
@@ -435,6 +443,21 @@ export function ProviderSettingsPanel({
   const [storageReport, setStorageReport] = useState<StorageReport | null>(null);
   const [storageMessage, setStorageMessage] = useState<string | null>(null);
   const [clearingStorageKind, setClearingStorageKind] = useState<StorageBucketKind | null>(null);
+
+  // Live login-state propagation. Every login path inside the panel
+  // (QR scan, password, SMS, cookie import, manual refresh) funnels through
+  // setNeteaseLoginStatus / setBilibiliLoginStatus, so a single effect per
+  // source mirrors the fresh state into the App shell immediately. This is the
+  // fix for "settings shows signed in, but playback says Sign in needed right
+  // after a scan" — the App shell no longer waits until panel close to learn
+  // the session changed.
+  useEffect(() => {
+    onNetEaseLoginChanged?.(neteaseLoginStatus);
+  }, [neteaseLoginStatus, onNetEaseLoginChanged]);
+
+  useEffect(() => {
+    onBilibiliLoginChanged?.(bilibiliLoginStatus);
+  }, [bilibiliLoginStatus, onBilibiliLoginChanged]);
 
   useEffect(() => {
     if (!open) return;
@@ -3037,6 +3060,7 @@ function DanmakuSettingsCard({
         label="运动风格 / Motion Style"
         value={settings.motionStyle}
         options={[
+          ["arc", "弧线", "Arc"],
           ["classic", "经典", "Classic"],
           ["drift", "漂移", "Drift"],
           ["meteor", "流星", "Meteor"],
@@ -3044,7 +3068,7 @@ function DanmakuSettingsCard({
           ["pulse", "呼吸", "Pulse"],
           ["mixed", "混合", "Mixed"],
         ]}
-        columns="sm:grid-cols-3 lg:grid-cols-6"
+        columns="sm:grid-cols-3 lg:grid-cols-7"
         onChange={(motionStyle) => onChange({ motionStyle })}
       />
       <DanmakuChoiceGroup
@@ -3465,7 +3489,10 @@ function neteaseServiceStageLabel(stage: NetEaseServiceStage): string {
     case "waiting_health":
       return "正在等待服务响应 / Waiting for service...";
     case "ready":
-      return "网易云音乐源已就绪 / NetEase source ready";
+      // Honest label: this stage only means the local managed runtime is
+      // listening — it says nothing about whether the user is signed in.
+      // The Login status line above is the source of truth for the session.
+      return "本地服务已就绪 / Local service ready (sign in to play)";
     case "failed":
       return "启动失败 / Failed to start";
     default:

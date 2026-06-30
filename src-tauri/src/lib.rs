@@ -3523,9 +3523,42 @@ fn save_netease_token(token: &str) -> Result<(), String> {
 }
 
 fn read_netease_token() -> Option<String> {
-    keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT)
-        .ok()
-        .and_then(|entry| entry.get_password().ok())
+    // The OS keyring (Windows Credential Manager / macOS Keychain / Linux
+    // Secret Service) can return a transient error while its backing service
+    // restarts or under access-contention. A single failed read used to flip
+    // `has_token` to false for that one playback call, surfacing as
+    // "Sign in needed" even though the user was signed in. Retry a couple of
+    // times with a short backoff before concluding the credential is absent.
+    let mut last_value: Option<String> = None;
+    for attempt in 0..3u32 {
+        let entry_result = keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT);
+        if let Ok(entry) = entry_result {
+            match entry.get_password() {
+                Ok(value) => {
+                    last_value = Some(value);
+                    break;
+                }
+                Err(err) => {
+                    // Only retry on NoEntry / back-end errors; an auth error
+                    // is a hard negative we should not paper over.
+                    let is_no_entry = matches!(err, keyring::Error::NoEntry);
+                    if is_no_entry {
+                        // Credential genuinely absent — don't retry.
+                        return read_netease_token_fallback();
+                    }
+                    if attempt < 2 {
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                        continue;
+                    }
+                }
+            }
+        } else if attempt < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            continue;
+        }
+    }
+
+    last_value
         .map(|value| normalize_cookie_header(&value))
         .filter(|value| !value.is_empty())
         .or_else(read_netease_token_fallback)
@@ -6070,7 +6103,19 @@ async fn fetch_netease_login_status(
                 if let Some(merged_cookie) =
                     merge_cookie_headers(Some(&current_token), response.set_cookie.as_deref())
                 {
-                    if merged_cookie != current_token {
+                    // Guard against the merge silently dropping the MUSIC_U
+                    // session marker. Some upstream responses return a
+                    // Set-Cookie that, after normalization, would replace the
+                    // authenticated session with an anonymous one — which then
+                    // makes every subsequent playback call appear "not logged
+                    // in". Only persist the merge if it preserves the session
+                    // marker that the existing credential carried.
+                    let had_marker = current_token.contains("MUSIC_U=");
+                    let keeps_marker = merged_cookie.contains("MUSIC_U=");
+                    if had_marker && !keeps_marker {
+                        // Keep the existing credential; do not overwrite it
+                        // with a session-stripped merge.
+                    } else if merged_cookie != current_token {
                         save_netease_token(&merged_cookie)?;
                         current_token = merged_cookie;
                         current_config.token = Some(current_token.clone());

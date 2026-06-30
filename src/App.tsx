@@ -1213,7 +1213,37 @@ export default function App() {
     window.localStorage.setItem("ome.playback.speed", String(speed));
   };
 
-  const toggleQueueDrawer = () => setQueueDrawerOpen((value) => !value);
+  const toggleQueueDrawer = () => {
+    // Overlay coordination (Part 4): the Queue Drawer and the Settings panel
+    // are mutually exclusive main overlays. Opening one closes the other so the
+    // user is never in two overlapping primary contexts at once.
+    setQueueDrawerOpen((value) => {
+      if (!value) setProviderSettingsOpen(false);
+      return !value;
+    });
+  };
+
+  // Unified entry into the Settings panel — closes the Queue Drawer so the two
+  // never stack. Used by every "open settings" call site below.
+  const openProviderSettings = (focus?: "all" | "music" | "atmosphere") => {
+    if (focus) setSettingsFocus(focus);
+    setQueueDrawerOpen(false);
+    setProviderSettingsOpen(true);
+  };
+
+  // Live login-state mirror from the settings panel into the App shell.
+  // Stabilized with useCallback so the panel's propagation effect doesn't
+  // re-run on every render. This closes the P0 gap where the panel showed
+  // "Signed in" right after a QR scan but playback / onboarding still read a
+  // stale signed-out state until the panel was dismissed.
+  const handleNetEaseLoginChanged = useCallback(
+    (status: NetEaseLoginStatus | null) => setSourceLoginStatus(status),
+    [],
+  );
+  const handleBilibiliLoginChanged = useCallback(
+    (status: BilibiliLoginStatus | null) => setBilibiliLoginStatus(status),
+    [],
+  );
 
   const toggleRecommendSimilar = (value: boolean) => {
     setRecommendSimilar(value);
@@ -1584,10 +1614,7 @@ export default function App() {
         onPlayLocal={playLocalTrack}
         onPlayNetEase={playNetEaseSong}
         onPlayBilibili={playBilibiliSong}
-        onOpenSettings={() => {
-          setSettingsFocus("music");
-          setProviderSettingsOpen(true);
-        }}
+        onOpenSettings={() => openProviderSettings("music")}
       />
 
       <LyricsSourceMenu
@@ -1603,24 +1630,15 @@ export default function App() {
         onAdjustLyricOffset={adjustLyricOffset}
         onResetLyricOffset={resetLyricOffset}
         onPlaybackQualityChange={changePlaybackQuality}
-        onOpenSettings={() => {
-          setSettingsFocus("music");
-          setProviderSettingsOpen(true);
-        }}
-        onOpenAtmosphereSettings={() => {
-          setSettingsFocus("atmosphere");
-          setProviderSettingsOpen(true);
-        }}
+        onOpenSettings={() => openProviderSettings("music")}
+        onOpenAtmosphereSettings={() => openProviderSettings("atmosphere")}
       />
 
       {libraryError && currentTrack && (
         <PlaybackNotice
           message={libraryError}
           reason={playbackDebug?.reason ?? currentTrack.unavailableReason}
-          onOpenSettings={() => {
-            setSettingsFocus("music");
-            setProviderSettingsOpen(true);
-          }}
+          onOpenSettings={() => openProviderSettings("music")}
         />
       )}
 
@@ -1631,10 +1649,7 @@ export default function App() {
           <EnvironmentPrompt
             status={sourceServiceStatus}
             rechecking={envPromptRechecking}
-            onInstall={() => {
-              setSettingsFocus("music");
-              setProviderSettingsOpen(true);
-            }}
+            onInstall={() => openProviderSettings("music")}
             onRecheck={recheckNeteaseEnvironment}
             onDismiss={dismissEnvPrompt}
           />
@@ -1650,13 +1665,11 @@ export default function App() {
           onImportMusic={importFolder}
           onOpenNeteaseSettings={() => {
             setShowOnboarding(false);
-            setSettingsFocus("music");
-            setProviderSettingsOpen(true);
+            openProviderSettings("music");
           }}
           onOpenBilibiliSettings={() => {
             setShowOnboarding(false);
-            setSettingsFocus("music");
-            setProviderSettingsOpen(true);
+            openProviderSettings("music");
           }}
         />
       )}
@@ -1781,6 +1794,8 @@ export default function App() {
             onPlaybackQualityChange={changePlaybackQuality}
             neteasePlaybackDebug={playbackDebug}
             bilibiliDanmakuDebug={danmakuDebug}
+            onNetEaseLoginChanged={handleNetEaseLoginChanged}
+            onBilibiliLoginChanged={handleBilibiliLoginChanged}
             onClose={() => {
               setProviderSettingsOpen(false);
               void neteaseAuthProvider
