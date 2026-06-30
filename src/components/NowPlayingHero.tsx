@@ -1,15 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, Loader2 } from "lucide-react";
+import {
+  FolderOpen,
+  Heart,
+  Loader2,
+  MoreHorizontal,
+  Share,
+  Sparkles,
+  ThumbsDown,
+} from "lucide-react";
 import clsx from "clsx";
 import type { Track } from "../types/music";
 import type { LyricLine } from "../features/lyrics/lyricsResolver";
 import type { BilibiliDanmakuDebug, DanmakuItem } from "../features/musicSources/provider";
 import { ArtworkImage } from "./ArtworkImage";
 import { DanmakuAtmosphereLayer } from "./DanmakuAtmosphereLayer";
+import { PLAYBACK_SPEEDS, type PlaybackSpeed } from "./PlayerControls";
 
 interface NowPlayingHeroProps {
   track: Track | null;
   lyrics: LyricLine[];
+  translatedLyrics: LyricLine[];
   currentLyricIndex: number;
   lyricWarning?: string | null;
   isPlaying: boolean;
@@ -21,11 +31,25 @@ interface NowPlayingHeroProps {
   isImporting: boolean;
   error: string | null;
   onImport: () => void;
+  liked: boolean;
+  onToggleLike: () => void;
+  onLessLikeThis: () => void;
+  onShare: () => string;
+  // Current playback speed (drives the active checkmark in the More menu's
+  // speed list) and a setter that applies an explicit speed directly — no
+  // more blind cycling.
+  playbackSpeed: PlaybackSpeed;
+  onSelectSpeed: (speed: PlaybackSpeed) => void;
+  // Click a lyric line to seek the audio to that line's start time. The
+  // Lyrics Room is a stage, not a flat list — clicking a line should feel
+  // like dropping the needle at that moment, then the room recenters.
+  onSeekToLyric: (seconds: number) => void;
 }
 
 export function NowPlayingHero({
   track,
   lyrics,
+  translatedLyrics,
   currentLyricIndex,
   lyricWarning,
   isPlaying,
@@ -37,12 +61,23 @@ export function NowPlayingHero({
   isImporting,
   error,
   onImport,
+  liked,
+  onToggleLike,
+  onLessLikeThis,
+  onShare,
+  playbackSpeed,
+  onSelectSpeed,
+  onSeekToLyric,
 }: NowPlayingHeroProps) {
   const [isTitleExpanded, setTitleExpanded] = useState(false);
-  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
+  const [isMoreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [likePulse, setLikePulse] = useState(false);
+  const [moreToast, setMoreToast] = useState<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setTitleExpanded(false);
+    setMoreMenuOpen(false);
   }, [track?.id]);
 
   useEffect(() => {
@@ -54,16 +89,52 @@ export function NowPlayingHero({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isTitleExpanded]);
 
+  // Close the "more" menu on outside pointer / Esc — mirrors the Quick
+  // Settings panel behavior so the two popovers feel consistent.
   useEffect(() => {
-    const container = lyricsScrollRef.current;
-    const activeLine = container?.querySelector<HTMLElement>(
-      `[data-lyric-index="${currentLyricIndex}"]`,
-    );
-    if (!container || !activeLine) return;
-    const targetTop =
-      activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
-    container.scrollTo({ top: Math.max(0, targetTop), behavior: isPlaying ? "smooth" : "auto" });
-  }, [currentLyricIndex, isPlaying, track?.id]);
+    if (!isMoreMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMoreMenuOpen]);
+
+  // Auto-dismiss the "more" toast after a short delay — these are light
+  // confirmations (share copied, less-like-this recorded), not modals.
+  useEffect(() => {
+    if (!moreToast) return;
+    const timer = window.setTimeout(() => setMoreToast(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [moreToast]);
+
+  const handleLike = () => {
+    if (!liked) {
+      // Brief pulse animation when liking — the heart grows then settles.
+      setLikePulse(true);
+      window.setTimeout(() => setLikePulse(false), 480);
+    }
+    onToggleLike();
+  };
+
+  const handleLessLikeThis = () => {
+    setMoreMenuOpen(false);
+    onLessLikeThis();
+    setMoreToast("Got it — fewer like this.");
+  };
+
+  const handleShare = () => {
+    setMoreMenuOpen(false);
+    const message = onShare();
+    setMoreToast(message);
+  };
 
   if (!track) {
     return (
@@ -103,40 +174,133 @@ export function NowPlayingHero({
         data-danmaku-safe-zone="left-visual"
         className="left-visual-stack relative z-10 flex min-w-0 flex-col items-center md:items-start"
       >
-        <div className="record-sleeve">
+        <div className="record-sleeve relative">
           <ArtworkImage
             src={track.coverUrl}
             alt={track.album || track.title}
             source={track.source}
             className="h-full w-full rounded-[18px] object-cover"
           />
+          {/* Like button — bottom-right of the cover. Doubles as a Taste
+              Signal: tapping it records a liked/unliked event that feeds
+              the listening-memory / radio scoring pipeline. Filled heart
+              when liked, soft outline otherwise. */}
+          <button
+            type="button"
+            onClick={handleLike}
+            className={`app-transition absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-xl ${
+              liked
+                ? "bg-[#7a2d1c]/85 text-white shadow-[0_8px_24px_rgba(122,45,28,0.42)]"
+                : "bg-white/55 text-[#4a2108]/55 hover:bg-white/75 hover:text-[#7a2d1c]"
+            } ${likePulse ? "scale-[1.18]" : "scale-100"}`}
+            aria-label={liked ? "Unlike" : "Like"}
+            aria-pressed={liked}
+            title={liked ? "Unlike / 取消喜欢" : "Like / 喜欢"}
+          >
+            <Heart className={`h-[18px] w-[18px] ${liked ? "fill-current" : ""}`} />
+          </button>
         </div>
 
         <div className="mt-6 w-[min(70vw,390px)] text-center md:w-[min(29vw,420px)] md:text-left">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setTitleExpanded((value) => !value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setTitleExpanded((value) => !value);
-              }
-            }}
-            className="block w-full cursor-pointer text-left"
-            aria-expanded={isTitleExpanded}
-          >
-            <h1
-              title={track.title}
-              className="line-clamp-2 max-h-[2.12em] text-[clamp(1.18rem,1.65vw,1.72rem)] font-bold leading-[1.06] text-[#4a2108]/88 transition-colors duration-300 hover:text-[#4a2108]"
+          <div className="flex items-start gap-2">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setTitleExpanded((value) => !value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setTitleExpanded((value) => !value);
+                }
+              }}
+              className="block min-w-0 flex-1 cursor-pointer text-left"
+              aria-expanded={isTitleExpanded}
             >
-              {track.title}
-            </h1>
+              <h1
+                title={track.title}
+                className="line-clamp-2 max-h-[2.12em] text-[clamp(1.18rem,1.65vw,1.72rem)] font-bold leading-[1.06] text-[#4a2108]/88 transition-colors duration-300 hover:text-[#4a2108]"
+              >
+                {track.title}
+              </h1>
+            </div>
+            {/* More button — hidden secondary actions. Opens a light glass
+                popover with only the actions that actually work today:
+                Less like this / Playback speed (explicit list) / Share.
+                Half-finished entries (Add to playlist, View source) are
+                intentionally NOT shown — an immersive player shouldn't
+                parade disabled stubs. Kept small so it never competes with
+                the cover or lyrics. */}
+            <div ref={moreMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((value) => !value)}
+                className={`app-transition flex h-9 w-9 items-center justify-center rounded-full text-[#4a2108]/40 hover:bg-[#4a2108]/[0.05] hover:text-[#4a2108]/70 ${
+                  isMoreMenuOpen ? "bg-[#4a2108]/[0.06] text-[#4a2108]/70" : ""
+                }`}
+                aria-label="More options"
+                aria-expanded={isMoreMenuOpen}
+                title="More / 更多"
+              >
+                <MoreHorizontal className="h-[18px] w-[18px]" />
+              </button>
+              {isMoreMenuOpen && (
+                <div className="quick-settings-panel settings-scroll absolute right-0 top-11 z-50 w-64 overflow-y-auto rounded-[20px] p-2">
+                  <MoreMenuItem
+                    icon={ThumbsDown}
+                    label="Less like this"
+                    sublabel="减少推荐"
+                    onClick={handleLessLikeThis}
+                  />
+                  {/* Playback speed — explicit list, not blind cycling. The
+                      current speed shows a checkmark; picking one applies it
+                      immediately and closes the menu. */}
+                  <div className="px-3 pb-1 pt-2">
+                    <div className="flex items-center gap-2 text-[#4a2108]/50">
+                      <Sparkles className="h-[15px] w-[15px]" />
+                      <span className="text-[13px] font-bold text-[#4a2108]/82">
+                        Playback speed
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#4a2108]/38">播放速度</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-2 pb-1.5">
+                    {PLAYBACK_SPEEDS.map((speed) => {
+                      const active = speed === playbackSpeed;
+                      const label = speed === 1 ? "1x" : `${speed}x`;
+                      return (
+                        <button
+                          key={speed}
+                          type="button"
+                          onClick={() => {
+                            onSelectSpeed(speed);
+                            setMoreMenuOpen(false);
+                          }}
+                          aria-pressed={active}
+                          className={`app-transition flex h-8 items-center justify-center rounded-full text-[12px] font-bold tabular-nums ${
+                            active
+                              ? "bg-[#4a2108]/85 text-white"
+                              : "bg-[#4a2108]/[0.05] text-[#4a2108]/62 hover:bg-[#4a2108]/[0.1] hover:text-[#4a2108]/85"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <MoreMenuItem icon={Share} label="Share" sublabel="分享" onClick={handleShare} />
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-4 space-y-1.5 text-[13px] font-semibold leading-5 text-[#4a2108]/[0.3]">
             <p>{track.artist}</p>
             <p>{track.album}</p>
           </div>
+          {moreToast && (
+            <p className="app-transition mt-3 rounded-full bg-[#4a2108]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#4a2108]/60">
+              {moreToast}
+            </p>
+          )}
         </div>
       </div>
 
@@ -160,38 +324,14 @@ export function NowPlayingHero({
             Finding the words
           </div>
         ) : lyrics.length > 0 ? (
-          <div
-            ref={lyricsScrollRef}
-            className="lyrics-scroll h-[58vh] touch-pan-y overflow-y-auto overscroll-contain py-[24vh] pr-8"
-            onWheel={(event) => event.stopPropagation()}
-          >
-            {lyrics.map((line, index) => {
-              const offset = index - currentLyricIndex;
-              const distance = Math.abs(offset);
-              const isCurrent = index === currentLyricIndex;
-              const isNeighbor = distance === 1;
-              const scale = isCurrent ? 1 : isNeighbor ? 0.92 : 0.84;
-              const xOffset = isCurrent ? 0 : isNeighbor ? -12 : -24;
-
-              return (
-                <p
-                  key={line.id}
-                  data-lyric-index={index}
-                  style={{
-                    transform: `translateX(${xOffset}px) scale(${scale})`,
-                  }}
-                  className={clsx(
-                    "flex min-h-[7.75rem] origin-left items-center text-balance text-4xl font-black leading-[1.04] transition-[opacity,filter,transform,color] duration-500 ease-out lg:text-5xl xl:text-7xl",
-                    isCurrent && "text-[#4a2108] opacity-100 blur-0",
-                    isNeighbor && "text-[#4a2108]/[0.30] opacity-70 blur-[2.5px]",
-                    distance > 1 && "text-[#4a2108]/[0.18] opacity-45 blur-[5px]",
-                  )}
-                >
-                  {line.text}
-                </p>
-              );
-            })}
-          </div>
+          <LyricsRoom
+            lyrics={lyrics}
+            translatedLyrics={translatedLyrics}
+            currentLyricIndex={currentLyricIndex}
+            isPlaying={isPlaying}
+            trackId={track.id}
+            onSeekToLyric={onSeekToLyric}
+          />
         ) : track.source === "bilibili" ? (
           <BilibiliVideoAtmosphere
             track={track}
@@ -249,6 +389,242 @@ export function NowPlayingHero({
         </div>
       </div>
     </section>
+  );
+}
+
+// Lyrics Room — the right-side lyric stage. Not a flat scrolling list:
+// the current line is the spatial center (sharp, large, ~full opacity),
+// nearby lines drift and blur like close echoes, and far lines dissolve
+// into the air with a gentle rotate so they read as atmosphere. Click any
+// line to drop the needle at that moment; the auto-scroll effect below
+// then recenters the stage on the new current line.
+//
+// Depth tiers (per spec):
+//   current  — opacity ~0.96, no blur, scale 1, no rotate
+//   nearby   — opacity ~0.42, blur 3px, scale 0.9, subtle fan drift
+//   far      — opacity fading to ~0.16, blur 7px, scale 0.8, gentle rotate
+// Motion is slow (duration-700) and eased so line changes feel like
+// breathing, never jittery. No 3D transforms — just opacity / blur /
+// scale / a hair of rotate, which is enough to suggest depth.
+function LyricsRoom({
+  lyrics,
+  translatedLyrics,
+  currentLyricIndex,
+  isPlaying,
+  trackId,
+  onSeekToLyric,
+}: {
+  lyrics: LyricLine[];
+  translatedLyrics: LyricLine[];
+  currentLyricIndex: number;
+  isPlaying: boolean;
+  trackId: string;
+  onSeekToLyric: (seconds: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Hidden Lyric Tools — translation toggle only for now (romanization /
+  // word-by-word are present but disabled: their data isn't parsed yet).
+  // Persisted so the user's reveal preference survives across tracks.
+  const [translationVisible, setTranslationVisible] = useState<boolean>(
+    () => window.localStorage.getItem("ome.lyrics.translationVisible") === "1",
+  );
+
+  const toggleTranslation = () => {
+    setTranslationVisible((prev) => {
+      const next = !prev;
+      window.localStorage.setItem("ome.lyrics.translationVisible", next ? "1" : "0");
+      return next;
+    });
+  };
+
+  // Recenter the stage on the current line — smooth while playing, instant
+  // when paused or right after a track switch so the room snaps to attention
+  // without a long slide.
+  useEffect(() => {
+    const container = scrollRef.current;
+    const activeLine = container?.querySelector<HTMLElement>(
+      `[data-lyric-index="${currentLyricIndex}"]`,
+    );
+    if (!container || !activeLine) return;
+    const targetTop =
+      activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: isPlaying ? "smooth" : "auto" });
+  }, [currentLyricIndex, isPlaying, trackId]);
+
+  // Match the current line's translation. Translated LRC usually shares the
+  // main LRC's timestamp structure, so an index match is the honest default;
+  // if the translated track has fewer lines, we fall back to a time search so
+  // we still surface the right line rather than nothing.
+  const currentTranslatedText = (() => {
+    if (!translationVisible || translatedLyrics.length === 0) return null;
+    const byIndex = translatedLyrics[currentLyricIndex];
+    if (byIndex?.text) return byIndex.text;
+    const current = lyrics[currentLyricIndex];
+    if (!current) return null;
+    let closest: LyricLine | null = null;
+    let bestDelta = Infinity;
+    for (const line of translatedLyrics) {
+      const delta = Math.abs(line.startTime - current.startTime);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        closest = line;
+      }
+    }
+    return closest?.text ?? null;
+  })();
+
+  return (
+    <>
+      <div
+        ref={scrollRef}
+        className="lyrics-scroll h-[58vh] touch-pan-y overflow-y-auto overscroll-contain py-[24vh] pr-8"
+        onWheel={(event) => event.stopPropagation()}
+      >
+        {lyrics.map((line, index) => {
+          const offset = index - currentLyricIndex; // signed: <0 above, >0 below
+          const distance = Math.abs(offset);
+          const isCurrent = distance === 0;
+          const isNearby = distance >= 1 && distance <= 2;
+
+          const opacity = isCurrent
+            ? 0.96
+            : isNearby
+              ? 0.42
+              : Math.max(0.14, 0.3 - distance * 0.02);
+          const blur = isCurrent ? 0 : isNearby ? 3 : 7;
+          const scale = isCurrent ? 1 : isNearby ? 0.9 : 0.8;
+          // Radiating drift: lines fan outward from center, capped so far
+          // lines don't leave the stage. Direction follows sign(offset).
+          const dir = Math.sign(offset);
+          const xShift = isCurrent ? 0 : dir * Math.min(distance, 4) * 6;
+          // Gentle rotate — the "echo in air" cue. Capped to stay calm.
+          const rotate = isCurrent ? 0 : dir * Math.min(distance, 3) * 0.5;
+
+          return (
+            <button
+              type="button"
+              key={line.id}
+              data-lyric-index={index}
+              onClick={() => onSeekToLyric(line.startTime)}
+              style={{
+                transform: `translateX(${xShift}px) scale(${scale}) rotate(${rotate}deg)`,
+                opacity,
+                filter: blur > 0 ? `blur(${blur}px)` : undefined,
+              }}
+              className={clsx(
+                "app-transition m-0 flex min-h-[7.75rem] w-full origin-center cursor-pointer items-center border-0 bg-transparent p-0 text-left text-balance text-4xl font-black leading-[1.04] duration-700 ease-out lg:text-5xl xl:text-7xl",
+                isCurrent ? "text-[#4a2108]" : "text-[#4a2108] hover:text-[#4a2108]/70",
+              )}
+              title={`Jump to ${formatTime(line.startTime)}`}
+              aria-current={isCurrent ? "true" : undefined}
+            >
+              <span className="flex flex-col">
+                <span>{line.text}</span>
+                {isCurrent && currentTranslatedText && (
+                  <span className="mt-3 text-lg font-semibold leading-snug text-[#4a2108]/55 lg:text-xl xl:text-2xl">
+                    {currentTranslatedText}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Hidden Lyric Tools — sit at the bottom-right corner of the stage.
+          Default opacity 0; only reveal when the pointer enters this small
+          hotspot. They never compete with the lyric stage on first glance.
+          Translation is live; Romanization / Word-by-word render disabled
+          until their data pipelines exist. */}
+      <div className="group/tool pointer-events-auto absolute bottom-5 right-5 z-20 flex flex-col items-end gap-1.5 p-2">
+        <div className="flex items-center gap-1 rounded-full border border-[#4a2108]/10 bg-white/45 px-1 py-1 opacity-0 shadow-[0_8px_24px_rgba(74,33,8,0.08)] backdrop-blur-md transition-all duration-300 group-hover/tool:opacity-100">
+          <HiddenToolButton
+            label="译"
+            active={translationVisible}
+            onClick={toggleTranslation}
+            title="Translation / 翻译"
+          />
+          <HiddenToolButton label="音" disabled title="Romanization / 罗马音 (暂不可用)" />
+          <HiddenToolButton label="逐字" disabled title="Word-by-word / 逐字 (暂不可用)" />
+        </div>
+        {translationVisible && !currentTranslatedText && (
+          <p className="rounded-full bg-[#4a2108]/[0.05] px-2.5 py-1 text-[10px] font-semibold text-[#4a2108]/45 opacity-0 transition-opacity duration-300 group-hover/tool:opacity-100">
+            暂无翻译 · No translation for this version
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+// A single hidden-tool pill. Compact, calm — just a one-character label so
+// the cluster reads as a whisper, not a toolbar. Active state is a soft fill;
+// disabled is greyed and non-interactive (its data isn't wired yet).
+function HiddenToolButton({
+  label,
+  active,
+  disabled,
+  onClick,
+  title,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-pressed={active}
+      className={clsx(
+        "app-transition flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-[11px] font-bold",
+        disabled
+          ? "cursor-not-allowed text-[#4a2108]/25"
+          : active
+            ? "bg-[#4a2108]/85 text-white"
+            : "text-[#4a2108]/45 hover:bg-[#4a2108]/[0.06] hover:text-[#4a2108]/75",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+// A single row in the "more" popover. Light, glassy, quiet — never a heavy
+// context menu. Disabled items render greyed out so the user can see the shape
+// of future features without being able to click them yet.
+function MoreMenuItem({
+  icon: Icon,
+  label,
+  sublabel,
+  onClick,
+  disabled,
+}: {
+  icon: typeof Heart;
+  label: string;
+  sublabel: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="app-transition source-menu-row flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-35"
+    >
+      <Icon className="h-[15px] w-[15px] shrink-0 text-[#4a2108]/50" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-bold text-[#4a2108]/82">{label}</span>
+        <span className="block truncate text-[11px] font-semibold text-[#4a2108]/38">
+          {sublabel}
+        </span>
+      </span>
+    </button>
   );
 }
 
