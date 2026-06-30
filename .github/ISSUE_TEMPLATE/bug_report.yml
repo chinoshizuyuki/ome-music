@@ -70,7 +70,7 @@ body:
     id: version
     attributes:
       label: Ome Music 版本 / Version
-      placeholder: 例如：v0.3.6
+      placeholder: 例如：v0.3.7
     validations:
       required: true
 

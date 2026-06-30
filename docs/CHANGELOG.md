@@ -6,9 +6,37 @@ This project follows small, traceable releases. Keep entries short and focused o
 
 - No unreleased changes yet.
 
+## [0.3.7] - 2026-06-30
+
+Stability release. No new features. Focuses on fixing the NetEase login/playback state mismatch and overlay/lyrics/danmaku/UI issues exposed during v0.3.6 acceptance, plus unblocking local music playback from user-picked folders outside `$HOME/Music`.
+
+### Added
+
+- NetEase VIP status now exposes `membershipKnown` so the Settings panel can distinguish "membership unknown (API unreachable)" from "Non-member (API confirmed)". Without this flag, a transient `/vip/info` failure surfaced as `Non-member` and misled users into thinking their membership had lapsed.
+- TopSearch NetEase click only dismisses the search popover on playback success. On failure the results stay visible with a banner pointing to the playback notice, so the user can pick another track instead of having the popover silently close.
+- Runtime asset scope grant: user-picked music folders (secondary drives, USB sticks, Desktop, etc.) are now authorized at runtime via `asset_protocol_scope().allow_directory()` both at import time and at startup restore, so playback no longer fails for folders outside the static `$HOME/Music` scope. The static `tauri.conf.json` scope stays locked down — `$HOME/**` and whole-disk access are never granted.
+- Managed NetEase runtime manifest bumped in lockstep with the app version (0.3.6 → 0.3.7) for traceability.
+
+### Fixed
+
+- Queue / Settings / More overlays are now mutually exclusive via a unified `activeOverlay` state (`none` | `queue` | `settings` | `more` | `source` | `lyricsTools`). Opening one closes the others; Esc and click-outside close the current overlay. TopSearch opening Settings also closes Queue.
+- Lyrics Room spatial stage: per-line `translate3d` + `rotate` + `scale` form an arc layout instead of flat scatter; line-height and padding-block increased so the active line is no longer clipped; transforms moved off the outer button to an inner span to avoid blur/transform cropping. The container keeps scroll while each line allows `overflow: visible`. Visual presets: Calm / Arc Room / Stage / Dream.
+- Danmaku corridor height increased and `line-height: 1.35` so large comments render fully instead of being cropped; new `arc` and `mixed` motion styles with arc path, gentle y-shift, fade in/out and light scale, so the default motion reads as emotional floating rather than a marquee.
+- Main UI subtraction: OmeRadio and DjCurator panels dimmed to opacity 45/60 with hover restore so they no longer compete with the cover/lyrics focus; playback speed chip hidden unless `speed ≠ 1`; Queue / Settings / More / Lyrics tools all behind the unified overlay manager. No features removed; only layering adjusted.
+- NetEase token read now retries 3× with 80ms backoff, and cookie merge during login-status polling protects `MUSIC_U` so a stale refresh no longer overwrites a valid session cookie.
+- Real-time login propagation: `onNetEaseLoginChanged` / `onBilibiliLoginChanged` callbacks now refresh the App top-level `sourceLoginStatus`, Settings panel, and VIP state immediately on QR scan success — users no longer need to close and reopen Settings to see "Signed in".
+- "NetEase source ready" label corrected to "本地网易云服务已启动" so users no longer conflate service-ready with account-signed-in.
+
+### Notes
+
+- This is an unsigned development build; Windows SmartScreen may warn.
+- Queue / tracks full separation is deferred to a follow-up refactor PR: the default play queue still rides on the `tracks` array, but `clearQueue` already preserves the library and search results, and `agentQueue` for radio/curator is already independent. Full separation would touch `playAdjacentTrack` / `rebuildShuffleOrder` / `currentIndex` and is out of scope for a stability release.
+- The unified `NetEaseAuthPlaybackSnapshot` diagnostic structure and the 11-reason playback-failure enumeration (`not_logged_in` / `cookie_missing` / `cookie_expired` / `vip_required` / `trial_only` / `no_copyright` / `region_restricted` / `url_null` / `api_failed` / `media_proxy_failed` / `audio_play_failed`) are deferred to a follow-up PR; this release ships the minimal UX fixes only.
+- Bumped version to 0.3.7.
+
 ## [0.3.6] - 2026-06-30
 
-This is the latest recommended public download. Older releases are deprecated and no longer recommended.
+Older release. Superseded by 0.3.7. Older releases are deprecated and no longer recommended.
 
 ### Added
 
