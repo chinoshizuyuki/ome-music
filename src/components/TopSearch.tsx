@@ -335,8 +335,20 @@ export function TopSearch({
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={async () => {
-                        await onPlayNetEase(song);
-                        setOpen(false);
+                        // Only dismiss the search popover when playback
+                        // actually started. On failure the import returns
+                        // false (and the real reason is surfaced via the
+                        // playback notice / library error), so we keep the
+                        // results visible for the user to pick another track
+                        // instead of silently swallowing the click.
+                        const ok = await onPlayNetEase(song);
+                        if (ok) {
+                          setOpen(false);
+                        } else {
+                          setNeteaseMessage(
+                            "Couldn't play this track — see the notice for the reason. / 无法播放，请查看提示。",
+                          );
+                        }
                       }}
                       className="search-result-row"
                     >
@@ -364,6 +376,11 @@ export function TopSearch({
                     <ShowMoreButton
                       onClick={() => setNeteaseVisible((v) => v + SOURCE_PAGE_SIZE)}
                     />
+                  )}
+                  {neteaseMessage && (
+                    <p className="px-1 pt-1 text-xs font-semibold text-[#7a2d1c]/72">
+                      {neteaseMessage}
+                    </p>
                   )}
                 </>
               ) : (

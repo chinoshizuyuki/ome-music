@@ -406,6 +406,11 @@ pub struct NeteaseVipStatusDto {
     is_member: bool,
     level: Option<String>,
     message: String,
+    // Distinguishes "we asked NetEase and the account is not a member" from
+    // "the /vip/info endpoint failed, so we genuinely don't know". Without this
+    // flag, an API failure surfaces as `is_member: false` and the UI shows
+    // "Non-member", which misleads users into thinking their membership lapsed.
+    membership_known: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -935,6 +940,22 @@ async fn import_music_folder(
             params![&directory_label],
         )
         .map_err(|error| error.to_string())?;
+    }
+
+    // Grant the chosen folder to Tauri's asset protocol scope at runtime so
+    // convertFileSrc() can actually load files from it. Without this grant only
+    // $HOME/Music is playable; user-picked folders (D:\Music, USB, Desktop)
+    // would scan successfully but fail at playback. The grant is recursive so
+    // nested album folders are covered. The static tauri.conf.json scope stays
+    // locked down — we never open $HOME/** or the whole disk.
+    if let Err(error) = app
+        .asset_protocol_scope()
+        .allow_directory(&folder_path, true)
+    {
+        eprintln!(
+            "could not authorize asset scope for {}: {error}",
+            folder_path.display()
+        );
     }
 
     // Discovery + tag parsing is CPU/IO heavy. Run it off the async executor so the
@@ -6312,6 +6333,9 @@ async fn fetch_netease_vip_status(
             is_member: false,
             level: None,
             message: "Sign in to view membership status.".to_string(),
+            // Known: the user is not signed in, so there is no membership to
+            // report. This is NOT an "unknown" state.
+            membership_known: true,
         });
     }
 
@@ -6352,12 +6376,17 @@ async fn fetch_netease_vip_status(
                 } else {
                     "No active membership found for this session.".to_string()
                 },
+                // The API answered, so the membership verdict is authoritative.
+                membership_known: true,
             })
         }
         Err(_) => Ok(NeteaseVipStatusDto {
             is_member: false,
             level: None,
             message: "Membership status is unavailable right now.".to_string(),
+            // Both /vip/info and /vip/info/v2 failed — we cannot tell whether
+            // the account is a member, so the UI must NOT label it "Non-member".
+            membership_known: false,
         }),
     }
 }
@@ -8186,6 +8215,33 @@ pub fn run() {
     }
 }
 
+// Re-apply every persisted authorized music folder to Tauri's asset protocol
+// scope on startup. The asset scope is process-local (not persisted), so
+// without this restore step a restart would break playback for any previously
+// picked folder outside $HOME/Music — the registry row would still exist, the
+// tracks would still be in the DB, but convertFileSrc() URLs would be rejected.
+// This keeps the static tauri.conf.json scope locked down; only folders the
+// user explicitly chose (and that survived in the DB) become playable again.
+fn restore_authorized_asset_scope(app: &tauri::AppHandle, db: &rusqlite::Connection) {
+    let Ok(mut statement) = db.prepare("SELECT directory_path FROM authorized_music_directories")
+    else {
+        return;
+    };
+    let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) else {
+        return;
+    };
+    let scope = app.asset_protocol_scope();
+    for path in rows.filter_map(Result::ok) {
+        let dir = std::path::PathBuf::from(path);
+        if let Err(error) = scope.allow_directory(&dir, true) {
+            eprintln!(
+                "could not restore asset scope for {}: {error}",
+                dir.display()
+            );
+        }
+    }
+}
+
 fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -8197,6 +8253,12 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
         })
         .setup(|app| {
             let db = initialize_database(app).map_err(std::io::Error::other)?;
+            // Re-grant every previously authorized music folder to the asset
+            // protocol scope. The scope is process-local and does not persist,
+            // so without this restore step every restart would silently break
+            // playback for any folder the user had picked before (e.g. D:\Music
+            // or a USB drive) even though the registry row is still in the DB.
+            restore_authorized_asset_scope(app.handle(), &db);
             let managed_netease_api = resolve_managed_netease_api_runtime(app);
             app.manage(AppState {
                 db: Mutex::new(db),

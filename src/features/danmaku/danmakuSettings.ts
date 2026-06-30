@@ -4,13 +4,7 @@ export type DanmakuDirection = "rtl" | "ltr" | "mixed";
 export type DanmakuDisplayMode = "off" | "video" | "ambient";
 export type DanmakuFontSize = "small" | "medium" | "large";
 export type DanmakuMotionStyle =
-  | "classic"
-  | "drift"
-  | "meteor"
-  | "float"
-  | "pulse"
-  | "arc"
-  | "mixed";
+  "classic" | "drift" | "meteor" | "float" | "pulse" | "arc" | "mixed";
 export type DanmakuEntranceStyle = "fade" | "slide" | "soft-rise" | "glow-drift";
 export type DanmakuEmotionalIntensity = "quiet" | "balanced" | "expressive";
 

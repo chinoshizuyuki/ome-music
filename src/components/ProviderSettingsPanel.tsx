@@ -2160,9 +2160,11 @@ export function ProviderSettingsPanel({
                           value={
                             neteaseVipStatus?.isMember
                               ? `Member${neteaseVipStatus.level ? ` (${neteaseVipStatus.level})` : ""}`
-                              : neteaseVipStatus
-                                ? "Non-member"
-                                : "Unknown — sign in to check"
+                              : neteaseVipStatus && neteaseVipStatus.membershipKnown === false
+                                ? "Unknown / 会员状态未知"
+                                : neteaseVipStatus
+                                  ? "Non-member"
+                                  : "Unknown — sign in to check"
                           }
                         />
                         <div className="flex gap-2 sm:col-span-2">
