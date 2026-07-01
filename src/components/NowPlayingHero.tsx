@@ -477,7 +477,7 @@ function LyricsRoom({
     <>
       <div
         ref={scrollRef}
-        className="lyrics-scroll h-[58vh] touch-pan-y overflow-y-auto overscroll-contain py-[24vh] pr-8"
+        className="lyrics-scroll h-[58vh] touch-pan-y overflow-y-auto overscroll-contain px-2 py-[24vh] pr-8"
         onWheel={(event) => event.stopPropagation()}
       >
         {lyrics.map((line, index) => {
@@ -487,18 +487,30 @@ function LyricsRoom({
           const isNearby = distance >= 1 && distance <= 2;
 
           const opacity = isCurrent
-            ? 0.96
+            ? 0.98
             : isNearby
-              ? 0.42
-              : Math.max(0.14, 0.3 - distance * 0.02);
-          const blur = isCurrent ? 0 : isNearby ? 3 : 7;
-          const scale = isCurrent ? 1 : isNearby ? 0.9 : 0.8;
-          // Radiating drift: lines fan outward from center, capped so far
-          // lines don't leave the stage. Direction follows sign(offset).
+              ? 0.4
+              : Math.max(0.1, 0.28 - distance * 0.025);
+          const blur = isCurrent ? 0 : isNearby ? 3 : 8;
+          const scale = isCurrent ? 1 : isNearby ? 0.88 : 0.76;
+          // Direction follows sign(offset): above lines fan up-and-back,
+          // below lines fan down-and-back, so the current line is the focal
+          // point of a soft curve wrapping around the listener.
           const dir = Math.sign(offset);
+          // Horizontal fan (kept from the previous radial drift, capped).
           const xShift = isCurrent ? 0 : dir * Math.min(distance, 4) * 6;
-          // Gentle rotate — the "echo in air" cue. Capped to stay calm.
-          const rotate = isCurrent ? 0 : dir * Math.min(distance, 3) * 0.5;
+          // Vertical curve: lines drift away from the current line along Y,
+          // which together with the X fan reads as a curved/arc stage rather
+          // than a flat list. Bumped the factor so the arc curvature reads
+          // more strongly while staying capped and calm.
+          const yShift = isCurrent ? 0 : dir * Math.min(distance, 4) * 9;
+          // True depth into the screen — the stage has preserve-3d, so this
+          // composes with the container's perspective(1200px) rotateY(-3deg)
+          // to make nearby lines feel close and far lines recede.
+          const zShift = isCurrent ? 0 : isNearby ? -38 : -86;
+          // Gentle rotate following the curve tangent. Slightly stronger so
+          // the arc reads as a path, not a stack. Capped to stay calm.
+          const rotate = isCurrent ? 0 : dir * Math.min(distance, 3) * 0.95;
 
           return (
             <button
@@ -507,12 +519,12 @@ function LyricsRoom({
               data-lyric-index={index}
               onClick={() => onSeekToLyric(line.startTime)}
               style={{
-                transform: `translateX(${xShift}px) scale(${scale}) rotate(${rotate}deg)`,
+                transform: `translate3d(${xShift}px, ${yShift}px, ${zShift}px) scale(${scale}) rotate(${rotate}deg)`,
                 opacity,
                 filter: blur > 0 ? `blur(${blur}px)` : undefined,
               }}
               className={clsx(
-                "app-transition m-0 flex min-h-[7.75rem] w-full origin-center cursor-pointer items-center border-0 bg-transparent p-0 text-left text-balance text-4xl font-black leading-[1.04] duration-700 ease-out lg:text-5xl xl:text-7xl",
+                "app-transition m-0 flex min-h-[8.5rem] w-full origin-center cursor-pointer items-center border-0 bg-transparent px-1 py-3 text-left text-balance text-4xl font-black leading-[1.18] duration-700 ease-out lg:text-5xl xl:text-7xl",
                 isCurrent ? "text-[#4a2108]" : "text-[#4a2108] hover:text-[#4a2108]/70",
               )}
               title={`Jump to ${formatTime(line.startTime)}`}

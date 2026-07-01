@@ -221,7 +221,12 @@ export function TopSearch({
     <div
       ref={rootRef}
       data-danmaku-safe-zone="search"
-      className="fixed left-1/2 top-5 z-40 w-[min(34vw,560px)] min-w-[300px] max-w-[calc(100vw-8rem)] -translate-x-1/2 max-md:left-6 max-md:right-20 max-md:w-auto max-md:min-w-0 max-md:max-w-none max-md:translate-x-0"
+      // UI subtraction (v0.3.7): the search bar is the largest always-on chrome
+      // competing with the cover/lyrics focal point. It now stays faint at rest
+      // (opacity ~55%) and only brightens when the user approaches it — hover
+      // or focus-within. Position, width and behavior are unchanged, so
+      // discoverability and the open-results flow stay intact.
+      className="fixed left-1/2 top-5 z-40 w-[min(34vw,560px)] min-w-[300px] max-w-[calc(100vw-8rem)] -translate-x-1/2 opacity-55 transition-opacity duration-500 ease-out hover:opacity-100 focus-within:opacity-100 max-md:left-6 max-md:right-20 max-md:w-auto max-md:min-w-0 max-md:max-w-none max-md:translate-x-0"
     >
       <div className="search-glass flex h-10 items-center gap-2.5 rounded-full px-3.5">
         <Search className="h-3.5 w-3.5 shrink-0 text-[#4a2108]/28" />
@@ -335,8 +340,20 @@ export function TopSearch({
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={async () => {
-                        await onPlayNetEase(song);
-                        setOpen(false);
+                        // Only dismiss the search popover when playback
+                        // actually started. On failure the import returns
+                        // false (and the real reason is surfaced via the
+                        // playback notice / library error), so we keep the
+                        // results visible for the user to pick another track
+                        // instead of silently swallowing the click.
+                        const ok = await onPlayNetEase(song);
+                        if (ok) {
+                          setOpen(false);
+                        } else {
+                          setNeteaseMessage(
+                            "Couldn't play this track — see the notice for the reason. / 无法播放，请查看提示。",
+                          );
+                        }
                       }}
                       className="search-result-row"
                     >
@@ -364,6 +381,11 @@ export function TopSearch({
                     <ShowMoreButton
                       onClick={() => setNeteaseVisible((v) => v + SOURCE_PAGE_SIZE)}
                     />
+                  )}
+                  {neteaseMessage && (
+                    <p className="px-1 pt-1 text-xs font-semibold text-[#7a2d1c]/72">
+                      {neteaseMessage}
+                    </p>
                   )}
                 </>
               ) : (

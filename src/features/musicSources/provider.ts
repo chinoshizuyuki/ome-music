@@ -249,6 +249,9 @@ export interface NetEaseVipStatus {
   isMember: boolean;
   level?: string | null;
   message: string;
+  // False when the /vip/info endpoint failed and we could not determine
+  // membership. UIs must show "Membership unknown" rather than "Non-member".
+  membershipKnown?: boolean;
 }
 
 export interface NetEaseUserProfile {
@@ -819,7 +822,13 @@ export class NetEaseAccountSessionProvider implements NetEaseAuthProvider {
 
   async getVipStatus(): Promise<NetEaseVipStatus> {
     if (!isTauriRuntime()) {
-      return { isMember: false, message: "Sign in to view membership status." };
+      // No native bridge → we cannot query NetEase, so membership is unknown
+      // (not "definitely non-member"). Surface that honestly to the UI.
+      return {
+        isMember: false,
+        message: "Sign in to view membership status.",
+        membershipKnown: false,
+      };
     }
     return invoke<NetEaseVipStatus>("get_netease_vip_status");
   }

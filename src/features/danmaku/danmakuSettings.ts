@@ -3,7 +3,8 @@ export type DanmakuSpeed = "slow" | "normal" | "fast";
 export type DanmakuDirection = "rtl" | "ltr" | "mixed";
 export type DanmakuDisplayMode = "off" | "video" | "ambient";
 export type DanmakuFontSize = "small" | "medium" | "large";
-export type DanmakuMotionStyle = "classic" | "drift" | "meteor" | "float" | "pulse" | "mixed";
+export type DanmakuMotionStyle =
+  "classic" | "drift" | "meteor" | "float" | "pulse" | "arc" | "mixed";
 export type DanmakuEntranceStyle = "fade" | "slide" | "soft-rise" | "glow-drift";
 export type DanmakuEmotionalIntensity = "quiet" | "balanced" | "expressive";
 
@@ -33,7 +34,11 @@ export const defaultDanmakuSettings: DanmakuSettings = {
   speed: "slow",
   direction: "rtl",
   fontSize: "medium",
-  motionStyle: "drift",
+  // Arc is the default — it's the softest, most curved motion, reading as
+  // "emotion drifting across the room" rather than a flat ticker. Drift /
+  // classic stay available for users who want a straighter rail; arc is the
+  // calm default that matches the product's immersive tone.
+  motionStyle: "arc",
   entranceStyle: "fade",
   emotionalIntensity: "quiet",
   filterRepeated: true,
@@ -78,7 +83,7 @@ function normalizeDanmakuSettings(settings: DanmakuSettings): DanmakuSettings {
     fontSize: ["small", "medium", "large"].includes(settings.fontSize)
       ? settings.fontSize
       : "medium",
-    motionStyle: ["classic", "drift", "meteor", "float", "pulse", "mixed"].includes(
+    motionStyle: ["classic", "drift", "meteor", "float", "pulse", "arc", "mixed"].includes(
       settings.motionStyle,
     )
       ? settings.motionStyle

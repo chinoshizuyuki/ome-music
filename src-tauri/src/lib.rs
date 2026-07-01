@@ -406,6 +406,11 @@ pub struct NeteaseVipStatusDto {
     is_member: bool,
     level: Option<String>,
     message: String,
+    // Distinguishes "we asked NetEase and the account is not a member" from
+    // "the /vip/info endpoint failed, so we genuinely don't know". Without this
+    // flag, an API failure surfaces as `is_member: false` and the UI shows
+    // "Non-member", which misleads users into thinking their membership lapsed.
+    membership_known: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -935,6 +940,22 @@ async fn import_music_folder(
             params![&directory_label],
         )
         .map_err(|error| error.to_string())?;
+    }
+
+    // Grant the chosen folder to Tauri's asset protocol scope at runtime so
+    // convertFileSrc() can actually load files from it. Without this grant only
+    // $HOME/Music is playable; user-picked folders (D:\Music, USB, Desktop)
+    // would scan successfully but fail at playback. The grant is recursive so
+    // nested album folders are covered. The static tauri.conf.json scope stays
+    // locked down — we never open $HOME/** or the whole disk.
+    if let Err(error) = app
+        .asset_protocol_scope()
+        .allow_directory(&folder_path, true)
+    {
+        eprintln!(
+            "could not authorize asset scope for {}: {error}",
+            folder_path.display()
+        );
     }
 
     // Discovery + tag parsing is CPU/IO heavy. Run it off the async executor so the
@@ -3509,23 +3530,68 @@ fn save_netease_token(token: &str) -> Result<(), String> {
         return Err("The NetEase session credential was empty.".to_string());
     }
 
-    // Reject plaintext fallback: sessions must live in the OS keyring.
+    // Sessions live in the OS keyring as the primary store.
     keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT)
         .map_err(|error| error.to_string())?
         .set_password(&normalized)
         .map_err(|error| error.to_string())?;
 
-    // Clean up any legacy plaintext fallback from older builds.
+    // Mirror the credential to the legacy plaintext fallback file too.
+    // We used to delete this file after a successful keyring write, but that
+    // created a real-world P0: when the OS keyring service transiently fails
+    // to read (Windows Credential Manager restart, Linux Secret Service
+    // contention, etc.), `read_netease_token` had no fallback and returned
+    // None — which the playback path then reported as `not_logged_in`,
+    // surfacing "Sign in needed" even though the user was signed in. Keeping
+    // the mirror lets a keyring read failure degrade gracefully instead of
+    // being misclassified as "user is not signed in".
     if let Some(path) = netease_token_fallback_path() {
-        let _ = fs::remove_file(path);
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let encoded = general_purpose::STANDARD.encode(normalized.as_bytes());
+        let _ = fs::write(&path, encoded);
     }
     Ok(())
 }
 
 fn read_netease_token() -> Option<String> {
-    keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT)
-        .ok()
-        .and_then(|entry| entry.get_password().ok())
+    // The OS keyring (Windows Credential Manager / macOS Keychain / Linux
+    // Secret Service) can return a transient error while its backing service
+    // restarts or under access-contention. A single failed read used to flip
+    // `has_token` to false for that one playback call, surfacing as
+    // "Sign in needed" even though the user was signed in. Retry a couple of
+    // times with a short backoff before concluding the credential is absent.
+    let mut last_value: Option<String> = None;
+    for attempt in 0..3u32 {
+        let entry_result = keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT);
+        if let Ok(entry) = entry_result {
+            match entry.get_password() {
+                Ok(value) => {
+                    last_value = Some(value);
+                    break;
+                }
+                Err(err) => {
+                    // Only retry on NoEntry / back-end errors; an auth error
+                    // is a hard negative we should not paper over.
+                    let is_no_entry = matches!(err, keyring::Error::NoEntry);
+                    if is_no_entry {
+                        // Credential genuinely absent — don't retry.
+                        return read_netease_token_fallback();
+                    }
+                    if attempt < 2 {
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                        continue;
+                    }
+                }
+            }
+        } else if attempt < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            continue;
+        }
+    }
+
+    last_value
         .map(|value| normalize_cookie_header(&value))
         .filter(|value| !value.is_empty())
         .or_else(read_netease_token_fallback)
@@ -5869,17 +5935,26 @@ async fn fetch_netease_playable_url_with_level(
     requested_level: Option<&str>,
     proxy_state: Option<&AppState>,
 ) -> Result<PlayableUrlDto, String> {
+    // P0 fix: `resolve_netease_source_config` may have read the keyring at a
+    // transient-failure moment and returned `token: None`, even though the user
+    // is actually signed in. Before concluding anything about login state,
+    // re-read the keyring once more here. This closes the gap where the
+    // settings page showed "Signed in" (snapshot taken earlier) but playback
+    // said "Sign in needed" (keyring read failed at this moment).
+    let effective_token = config.token.clone().or_else(read_netease_token);
+    let has_token = effective_token.is_some();
+    // Build a local config with the recovered token so downstream requests
+    // actually carry the cookie.
+    let effective_config = ResolvedNeteaseSourceConfig {
+        token: effective_token,
+        ..config.clone()
+    };
+    let config = &effective_config;
+
     let requested_level = requested_level
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| {
-            if config.token.is_some() {
-                "hires"
-            } else {
-                "standard"
-            }
-        });
-    let has_token = config.token.is_some();
+        .unwrap_or(if has_token { "hires" } else { "standard" });
     let login_status = fetch_netease_login_status(config).await.ok();
     // Distinguish "login status known" from "login status unknown (API failed)".
     // When the status API is unreachable we must NOT pretend the cookie is a valid
@@ -6070,7 +6145,19 @@ async fn fetch_netease_login_status(
                 if let Some(merged_cookie) =
                     merge_cookie_headers(Some(&current_token), response.set_cookie.as_deref())
                 {
-                    if merged_cookie != current_token {
+                    // Guard against the merge silently dropping the MUSIC_U
+                    // session marker. Some upstream responses return a
+                    // Set-Cookie that, after normalization, would replace the
+                    // authenticated session with an anonymous one — which then
+                    // makes every subsequent playback call appear "not logged
+                    // in". Only persist the merge if it preserves the session
+                    // marker that the existing credential carried.
+                    let had_marker = current_token.contains("MUSIC_U=");
+                    let keeps_marker = merged_cookie.contains("MUSIC_U=");
+                    if had_marker && !keeps_marker {
+                        // Keep the existing credential; do not overwrite it
+                        // with a session-stripped merge.
+                    } else if merged_cookie != current_token {
                         save_netease_token(&merged_cookie)?;
                         current_token = merged_cookie;
                         current_config.token = Some(current_token.clone());
@@ -6267,6 +6354,9 @@ async fn fetch_netease_vip_status(
             is_member: false,
             level: None,
             message: "Sign in to view membership status.".to_string(),
+            // Known: the user is not signed in, so there is no membership to
+            // report. This is NOT an "unknown" state.
+            membership_known: true,
         });
     }
 
@@ -6307,12 +6397,17 @@ async fn fetch_netease_vip_status(
                 } else {
                     "No active membership found for this session.".to_string()
                 },
+                // The API answered, so the membership verdict is authoritative.
+                membership_known: true,
             })
         }
         Err(_) => Ok(NeteaseVipStatusDto {
             is_member: false,
             level: None,
             message: "Membership status is unavailable right now.".to_string(),
+            // Both /vip/info and /vip/info/v2 failed — we cannot tell whether
+            // the account is a member, so the UI must NOT label it "Non-member".
+            membership_known: false,
         }),
     }
 }
@@ -8141,6 +8236,33 @@ pub fn run() {
     }
 }
 
+// Re-apply every persisted authorized music folder to Tauri's asset protocol
+// scope on startup. The asset scope is process-local (not persisted), so
+// without this restore step a restart would break playback for any previously
+// picked folder outside $HOME/Music — the registry row would still exist, the
+// tracks would still be in the DB, but convertFileSrc() URLs would be rejected.
+// This keeps the static tauri.conf.json scope locked down; only folders the
+// user explicitly chose (and that survived in the DB) become playable again.
+fn restore_authorized_asset_scope(app: &tauri::AppHandle, db: &rusqlite::Connection) {
+    let Ok(mut statement) = db.prepare("SELECT directory_path FROM authorized_music_directories")
+    else {
+        return;
+    };
+    let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) else {
+        return;
+    };
+    let scope = app.asset_protocol_scope();
+    for path in rows.filter_map(Result::ok) {
+        let dir = std::path::PathBuf::from(path);
+        if let Err(error) = scope.allow_directory(&dir, true) {
+            eprintln!(
+                "could not restore asset scope for {}: {error}",
+                dir.display()
+            );
+        }
+    }
+}
+
 fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -8152,6 +8274,12 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
         })
         .setup(|app| {
             let db = initialize_database(app).map_err(std::io::Error::other)?;
+            // Re-grant every previously authorized music folder to the asset
+            // protocol scope. The scope is process-local and does not persist,
+            // so without this restore step every restart would silently break
+            // playback for any folder the user had picked before (e.g. D:\Music
+            // or a USB drive) even though the registry row is still in the DB.
+            restore_authorized_asset_scope(app.handle(), &db);
             let managed_netease_api = resolve_managed_netease_api_runtime(app);
             app.manage(AppState {
                 db: Mutex::new(db),

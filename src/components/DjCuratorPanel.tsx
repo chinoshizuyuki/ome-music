@@ -314,7 +314,7 @@ export function DjCuratorPanel({
           "ambient-dj-dock group fixed right-0 top-1/2 z-40 flex h-[76px] -translate-y-1/2 items-center overflow-hidden rounded-l-[24px] border border-r-0 border-white/[0.16] text-left text-[#4a2108] transition-[width,transform,opacity,background,box-shadow] duration-300 ease-out",
           isOpen
             ? "pointer-events-none w-12 translate-x-full opacity-0"
-            : "pointer-events-auto w-12 translate-x-0 opacity-100 hover:w-[150px]",
+            : "pointer-events-auto w-12 translate-x-0 opacity-60 hover:w-[150px] hover:opacity-100",
         )}
         aria-label="Open Private DJ"
         aria-expanded={isOpen}

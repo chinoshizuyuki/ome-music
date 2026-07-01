@@ -153,6 +153,10 @@ button {
 
   .lyric-stage {
     transform: perspective(1200px) rotateY(-3deg);
+    /* Preserve 3D so per-line translateZ composes with the stage's perspective,
+       giving the lyrics room real depth (current line closest, far lines
+       recede) instead of a flat vertical list. */
+    transform-style: preserve-3d;
   }
 
   .bilibili-atmosphere-stage {
@@ -669,6 +673,11 @@ button {
     font-size: 0.92rem;
     font-weight: 700;
     letter-spacing: 0;
+    /* Explicit line-height keeps the glyph + padding fully inside the box and
+       stops the bottom of characters (descenders, the rounded pill) from being
+       clipped by the stage's overflow-hidden container, especially at the larger
+       font tier and on the meteor/arc presets that add vertical motion. */
+    line-height: 1.35;
     text-shadow: 0 1px 8px rgba(30, 12, 5, 0.5);
     filter: none;
     backdrop-filter: none;
@@ -684,7 +693,8 @@ button {
 
   .danmaku-motion-drift,
   .danmaku-motion-float,
-  .danmaku-motion-pulse {
+  .danmaku-motion-pulse,
+  .danmaku-motion-arc {
     animation-timing-function: cubic-bezier(0.35, 0, 0.24, 1);
   }
 
@@ -716,7 +726,10 @@ button {
   }
 
   .ambient-danmaku-corridor {
-    height: 34px;
+    /* Grown from 34px to 46px to fit the bumped font tier (Large = 32px) plus
+       padding and the vertical motion of arc/meteor without clipping the
+       bottom of the glyph. */
+    height: 46px;
     contain: layout paint;
   }
 
@@ -725,9 +738,14 @@ button {
     left: 0;
     top: 1px;
     max-width: min(34vw, 520px);
-    overflow: hidden;
+    /* Visible (not hidden) so descenders, the pill padding, and the text glow
+       are never clipped. Long lines are kept in check by max-width +
+       white-space nowrap on the parent corridor; the previous overflow:hidden
+       + text-overflow:ellipsis cut the bottom of glyphs at larger sizes and
+       during arc vertical motion. */
+    overflow: visible;
     white-space: nowrap;
-    text-overflow: ellipsis;
+    text-overflow: clip;
     border-radius: 999px;
     padding: 0.2rem 0.68rem;
     color: rgba(255, 248, 240, 0.94);
@@ -841,6 +859,62 @@ button {
   100% {
     opacity: 0;
     transform: translate3d(58vw, 38px, 0) rotate(4deg);
+  }
+}
+
+/* Arc — the recommended "emotion sweeping across the room" motion. Unlike the
+   straight-line classic/drift, the item rides a soft sinusoidal Y curve with
+   a rotation that follows the curve tangent, so it reads as floating along a
+   curved path rather than sliding on a rail. The curve is tuned to feel like
+   air carrying a thought: a gentle rise into the room, a soft peak mid-travel,
+   then a quiet settle on the way out — never a sharp dip-then-jump. */
+@keyframes danmaku-arc-rtl {
+  0% {
+    opacity: 0;
+    transform: translate3d(56vw, 2px, 0) rotate(1.4deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translate3d(40vw, -10px, 0) rotate(0.6deg);
+  }
+  32% {
+    transform: translate3d(22vw, -18px, 0) rotate(-0.6deg);
+  }
+  54% {
+    transform: translate3d(2vw, -14px, 0) rotate(-1.2deg);
+  }
+  76% {
+    opacity: 0.92;
+    transform: translate3d(calc(-18vw - 1rem), -4px, 0) rotate(-0.4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(-100% - 2rem), 8px, 0) rotate(0.8deg);
+  }
+}
+
+@keyframes danmaku-arc-ltr {
+  0% {
+    opacity: 0;
+    transform: translate3d(calc(-100% - 2rem), 2px, 0) rotate(-1.4deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translate3d(calc(-40vw - 1rem), -10px, 0) rotate(-0.6deg);
+  }
+  32% {
+    transform: translate3d(calc(-22vw - 1rem), -18px, 0) rotate(0.6deg);
+  }
+  54% {
+    transform: translate3d(0vw, -14px, 0) rotate(1.2deg);
+  }
+  76% {
+    opacity: 0.92;
+    transform: translate3d(18vw, -4px, 0) rotate(0.4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(56vw, 8px, 0) rotate(-0.8deg);
   }
 }
 
@@ -1020,6 +1094,62 @@ button {
   100% {
     opacity: 0;
     transform: translate3d(var(--ambient-travel), 24px, 0) rotate(3deg);
+  }
+}
+
+/* Ambient arc — same soft sinusoidal Y curve as the in-video arc, but
+   traveling across the full window. X start/end use the ambient travel
+   convention; the midpoints use vw so the curve reads at any window size.
+   The curve is a gentle rise → soft peak → settle, mirroring the in-video
+   arc so danmaku and ambient atmosphere share one emotional motion
+   language. */
+@keyframes ambient-arc-rtl {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--ambient-travel), 2px, 0) rotate(1.4deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translate3d(58vw, -10px, 0) rotate(0.6deg);
+  }
+  32% {
+    transform: translate3d(32vw, -18px, 0) rotate(-0.6deg);
+  }
+  54% {
+    transform: translate3d(4vw, -14px, 0) rotate(-1.2deg);
+  }
+  76% {
+    opacity: 0.92;
+    transform: translate3d(-26vw, -4px, 0) rotate(-0.4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(-100% - 1.5rem), 8px, 0) rotate(0.8deg);
+  }
+}
+
+@keyframes ambient-arc-ltr {
+  0% {
+    opacity: 0;
+    transform: translate3d(calc(-100% - 1.5rem), 2px, 0) rotate(-1.4deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translate3d(-58vw, -10px, 0) rotate(-0.6deg);
+  }
+  32% {
+    transform: translate3d(-32vw, -18px, 0) rotate(0.6deg);
+  }
+  54% {
+    transform: translate3d(-4vw, -14px, 0) rotate(1.2deg);
+  }
+  76% {
+    opacity: 0.92;
+    transform: translate3d(26vw, -4px, 0) rotate(0.4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--ambient-travel), 8px, 0) rotate(-0.8deg);
   }
 }
 

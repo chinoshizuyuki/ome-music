@@ -219,7 +219,7 @@ function resolveMotionStyle(
   seed: number,
 ): Exclude<DanmakuMotionStyle, "mixed"> {
   if (style !== "mixed") return style;
-  return (["classic", "drift", "float", "pulse", "meteor"] as const)[seed % 5];
+  return (["arc", "classic", "drift", "float", "pulse", "meteor"] as const)[seed % 6];
 }
 
 function motionAnimationName(
@@ -235,14 +235,16 @@ function motionDurationFactor(motion: Exclude<DanmakuMotionStyle, "mixed">): num
   if (motion === "float") return 1.25;
   if (motion === "pulse") return 0.72;
   if (motion === "drift") return 1.12;
+  if (motion === "arc") return 1.18;
   return 1;
 }
 
 function fontSizeValue(size: DanmakuSettings["fontSize"]): string {
-  // Readable default danmaku sizes (Small 16px / Medium 20px / Large 26px).
-  // Mirrors DanmakuAtmosphereLayer so the same size system applies to both the
-  // in-video danmaku and the ambient atmosphere layer.
-  return size === "small" ? "1rem" : size === "large" ? "1.625rem" : "1.3rem";
+  // Bumped one tier up so danmaku reads as atmosphere, not fine print.
+  // Small ≈20.8px / Medium ≈26px / Large 32px. Mirrors DanmakuAtmosphereLayer
+  // so the same size system applies to both the in-video danmaku and the
+  // ambient atmosphere layer.
+  return size === "small" ? "1.3rem" : size === "large" ? "2rem" : "1.625rem";
 }
 
 function intensityOpacity(intensity: DanmakuSettings["emotionalIntensity"]): number {
