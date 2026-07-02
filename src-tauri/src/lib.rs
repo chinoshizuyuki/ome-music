@@ -3595,17 +3595,17 @@ fn save_netease_token(token: &str) -> Result<(), String> {
     }
 
     let fallback_result = write_netease_token_fallback(&normalized);
-    let keyring_result =
-        match keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT) {
-            Ok(entry) => match entry.set_password(&normalized) {
-                Ok(()) => Ok(()),
-                Err(error) => {
-                    let _ = entry.delete_credential();
-                    Err(error.to_string())
-                }
-            },
-            Err(error) => Err(error.to_string()),
-        };
+    let keyring_result = match keyring::Entry::new(NETEASE_KEYRING_SERVICE, NETEASE_KEYRING_ACCOUNT)
+    {
+        Ok(entry) => match entry.set_password(&normalized) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = entry.delete_credential();
+                Err(error.to_string())
+            }
+        },
+        Err(error) => Err(error.to_string()),
+    };
 
     // Mirror the credential to the legacy plaintext fallback file too.
     // We used to delete this file after a successful keyring write, but that
@@ -8298,10 +8298,10 @@ fn fallback_cover_url(seed: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bilibili_cookie_from_login_url, bilibili_mixin_key, encode_url_component, has_cookie_name,
-        extract_netease_login_cookie, merge_bilibili_cookies, normalize_bilibili_image_url,
-        parse_bilibili_danmaku_xml, request_bilibili_danmaku_xml, wbi_key_from_url,
-        ResolvedBilibiliSourceConfig,
+        bilibili_cookie_from_login_url, bilibili_mixin_key, encode_url_component,
+        extract_netease_login_cookie, has_cookie_name, merge_bilibili_cookies,
+        normalize_bilibili_image_url, parse_bilibili_danmaku_xml, request_bilibili_danmaku_xml,
+        wbi_key_from_url, ResolvedBilibiliSourceConfig,
     };
 
     #[test]
